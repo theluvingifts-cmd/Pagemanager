@@ -51,8 +51,8 @@ facebookRouter.get('/status', async (req: Request, res: Response) => {
         .get();
 
       connectedPagesCount = pagesSnap.size;
-    } catch (e) {
-      console.error('Error fetching facebook status from Firestore:', e);
+    } catch (e: any) {
+      console.warn('Server Firestore notice for facebook status:', e?.message || e);
     }
   }
 
@@ -78,6 +78,13 @@ async function handleOAuthUrl(req: Request, res: Response) {
       return res.status(401).json({ error: 'Chưa đăng nhập. Vui lòng đăng nhập trước khi kết nối Facebook.' });
     }
 
+    if (!process.env.META_APP_ID || !process.env.META_APP_SECRET) {
+      return res.status(400).json({
+        error: 'Biến môi trường META_APP_ID chưa được cấu hình. Vui lòng xem hướng dẫn trong phần Cài đặt.',
+        code: 'META_NOT_CONFIGURED',
+      });
+    }
+
     const redirectUri = getAppRedirectUri(req);
     const statePayload = Buffer.from(JSON.stringify({
       userId: user.id,
@@ -88,7 +95,7 @@ async function handleOAuthUrl(req: Request, res: Response) {
 
     res.json({ url: oauthUrl, redirectUri });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Lỗi tạo liên kết đăng nhập Facebook' });
+    res.status(400).json({ error: err.message || 'Lỗi tạo liên kết đăng nhập Facebook' });
   }
 }
 

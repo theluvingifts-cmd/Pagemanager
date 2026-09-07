@@ -224,6 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         isConfigured,
         login,
+        loginWithGoogle,
         register,
         logout,
         apiFetch,
