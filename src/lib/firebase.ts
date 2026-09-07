@@ -1,0 +1,97 @@
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
+import { getFirestore, Firestore } from 'firebase/firestore';
+import { getStorage, FirebaseStorage } from 'firebase/storage';
+import appletConfig from '../../firebase-applet-config.json';
+
+const meta = import.meta as any;
+const env = meta.env || {};
+
+export const firebaseConfig = {
+  apiKey: appletConfig?.apiKey || env.VITE_FIREBASE_API_KEY || '',
+  authDomain: appletConfig?.authDomain || env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: appletConfig?.projectId || env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: appletConfig?.storageBucket || env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: appletConfig?.messagingSenderId || env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: appletConfig?.appId || env.VITE_FIREBASE_APP_ID || '',
+  firestoreDatabaseId: appletConfig?.firestoreDatabaseId || '',
+};
+
+export const isFirebaseConfigured = (): boolean => {
+  return Boolean(
+    firebaseConfig.apiKey &&
+    firebaseConfig.projectId &&
+    !firebaseConfig.apiKey.includes('placeholder') &&
+    !firebaseConfig.projectId.includes('placeholder')
+  );
+};
+
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+let db: Firestore | null = null;
+let storage: FirebaseStorage | null = null;
+
+function getOrInitApp(): FirebaseApp | null {
+  if (!isFirebaseConfigured()) return null;
+  if (!app) {
+    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  }
+  return app;
+}
+
+if (isFirebaseConfigured()) {
+  try {
+    const initializedApp = getOrInitApp();
+    if (initializedApp) {
+      auth = getAuth(initializedApp);
+      db = firebaseConfig.firestoreDatabaseId
+        ? getFirestore(initializedApp, firebaseConfig.firestoreDatabaseId)
+        : getFirestore(initializedApp);
+      storage = getStorage(initializedApp);
+    }
+  } catch (error) {
+    console.error('Failed to initialize Firebase client:', error);
+  }
+}
+
+export function getFirebaseAuth(): Auth | null {
+  if (!auth && isFirebaseConfigured()) {
+    try {
+      const initializedApp = getOrInitApp();
+      if (initializedApp) auth = getAuth(initializedApp);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  return auth;
+}
+
+export function getFirebaseDb(): Firestore | null {
+  if (!db && isFirebaseConfigured()) {
+    try {
+      const initializedApp = getOrInitApp();
+      if (initializedApp) {
+        db = firebaseConfig.firestoreDatabaseId
+          ? getFirestore(initializedApp, firebaseConfig.firestoreDatabaseId)
+          : getFirestore(initializedApp);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  return db;
+}
+
+export function getFirebaseStorage(): FirebaseStorage | null {
+  if (!storage && isFirebaseConfigured()) {
+    try {
+      const initializedApp = getOrInitApp();
+      if (initializedApp) storage = getStorage(initializedApp);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  return storage;
+}
+
+export { app, auth, db, storage };

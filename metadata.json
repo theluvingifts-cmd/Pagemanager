@@ -1,0 +1,6 @@
+{
+  "name": "PAGE MANAGER",
+  "description": "Quản lý và xuất bản nội dung trực tiếp lên Facebook Page qua Meta Graph API.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

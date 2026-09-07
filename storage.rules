@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/{allPaths=**} {
+      allow read: if true; // Public read for uploaded post media
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /media/{userId}/{allPaths=**} {
+      allow read: if true; // Public read so Facebook Graph API can fetch images
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}
