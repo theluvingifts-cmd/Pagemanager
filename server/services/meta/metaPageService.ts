@@ -10,50 +10,42 @@ export interface MetaPageItem {
   page_tasks: string[];
 }
 
-/**
- * Fetches real Facebook Pages managed by the authenticated user
- */
-export async function getManagedPages(userAccessToken: string): Promise<MetaPageItem[]> {
-  const url = `${getGraphBaseUrl()}/me/accounts?fields=id,name,username,access_token,tasks,picture.width(150).height(150){url}&access_token=${userAccessToken}`;
-
-  const response = await fetch(url);
+export async function getManagedPages(
+  userAccessToken: string,
+  graphApiVersion?: string
+): Promise<MetaPageItem[]> {
+  const url = `${getGraphBaseUrl(graphApiVersion)}/me/accounts?fields=id,name,username,access_token,tasks,picture.width(150).height(150){url}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${userAccessToken}` },
+  });
   const data = await response.json();
+  if (!response.ok || data.error) throw MetaApiError.fromGraphResponse(data);
 
-  if (!response.ok || data.error) {
-    throw MetaApiError.fromGraphResponse(data);
-  }
-
-  const pages: MetaPageItem[] = (data.data || []).map((p: any) => ({
-    page_id: p.id,
-    page_name: p.name,
-    page_username: p.username || '',
-    page_avatar_url: p.picture?.data?.url || '',
-    page_access_token: p.access_token,
-    page_tasks: Array.isArray(p.tasks) ? p.tasks : [],
+  return (data.data || []).map((page: any) => ({
+    page_id: page.id,
+    page_name: page.name,
+    page_username: page.username || '',
+    page_avatar_url: page.picture?.data?.url || '',
+    page_access_token: page.access_token,
+    page_tasks: Array.isArray(page.tasks) ? page.tasks : [],
   }));
-
-  return pages;
 }
 
-/**
- * Validates connection and permissions for a specific Facebook Page
- */
 export async function testPageConnection(
   pageId: string,
-  pageAccessToken: string
+  pageAccessToken: string,
+  graphApiVersion?: string
 ): Promise<{ success: boolean; pageName: string; canPost: boolean }> {
-  const url = `${getGraphBaseUrl()}/${pageId}?fields=id,name,can_post&access_token=${pageAccessToken}`;
-
-  const response = await fetch(url);
+  const response = await fetch(
+    `${getGraphBaseUrl(graphApiVersion)}/${encodeURIComponent(pageId)}?fields=id,name`,
+    { headers: { Authorization: `Bearer ${pageAccessToken}` } }
+  );
   const data = await response.json();
-
-  if (!response.ok || data.error) {
-    throw MetaApiError.fromGraphResponse(data);
-  }
+  if (!response.ok || data.error) throw MetaApiError.fromGraphResponse(data);
 
   return {
     success: true,
     pageName: data.name,
-    canPost: data.can_post ?? true,
+    canPost: true,
   };
 }

@@ -25,6 +25,18 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const META_VAULT_KEY_STORAGE = 'pagemanager_meta_vault_key';
+
+function getOrCreateMetaVaultKey(): string {
+  let existing = localStorage.getItem(META_VAULT_KEY_STORAGE) || '';
+  if (/^[a-f0-9]{64}$/i.test(existing)) return existing.toLowerCase();
+
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  existing = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  localStorage.setItem(META_VAULT_KEY_STORAGE, existing);
+  return existing;
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -50,6 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const idToken = await currentUser.getIdToken();
           setToken(idToken);
+          getOrCreateMetaVaultKey();
         } catch (e) {
           console.error('Error fetching Firebase ID token:', e);
           setToken(null);
@@ -60,22 +73,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
-    return () => {
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [isConfigured]);
 
   const login = async (email: string, password: string) => {
     const auth = getFirebaseAuth();
-    if (!auth) {
-      return { error: 'Chưa cấu hình Firebase API Key và Project ID trong biến môi trường.' };
-    }
+    if (!auth) return { error: 'Chưa cấu hình Firebase API Key và Project ID trong biến môi trường.' };
 
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
       setUser(cred.user);
       const idToken = await cred.user.getIdToken();
       setToken(idToken);
+      getOrCreateMetaVaultKey();
       return {};
     } catch (err: any) {
       let message = err.message || 'Đăng nhập thất bại';
@@ -94,9 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithGoogle = async () => {
     const auth = getFirebaseAuth();
-    if (!auth) {
-      return { error: 'Chưa cấu hình Firebase.' };
-    }
+    if (!auth) return { error: 'Chưa cấu hình Firebase.' };
 
     try {
       const provider = new GoogleAuthProvider();
@@ -121,6 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(cred.user);
       const idToken = await cred.user.getIdToken();
       setToken(idToken);
+      getOrCreateMetaVaultKey();
       return {};
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user') {
@@ -132,17 +141,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (email: string, password: string, name?: string) => {
     const auth = getFirebaseAuth();
-    if (!auth) {
-      return { error: 'Chưa cấu hình Firebase API Key và Project ID trong biến môi trường.' };
-    }
+    if (!auth) return { error: 'Chưa cấu hình Firebase API Key và Project ID trong biến môi trường.' };
 
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       const displayName = name || email.split('@')[0];
-
       await updateProfile(cred.user, { displayName });
 
-      // Save user to Firestore users collection
       const db = getFirebaseDb();
       if (db) {
         try {
@@ -163,6 +168,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(cred.user);
       const idToken = await cred.user.getIdToken();
       setToken(idToken);
+      getOrCreateMetaVaultKey();
       return {};
     } catch (err: any) {
       let message = err.message || 'Đăng ký thất bại';
@@ -179,16 +185,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     const auth = getFirebaseAuth();
-    if (auth) {
-      await signOut(auth);
-    }
+    if (auth) await signOut(auth);
     setUser(null);
     setToken(null);
   };
 
-  /**
-   * Authenticated API helper sending Firebase ID Token in Authorization Bearer
-   */
   const apiFetch = async (path: string, options: RequestInit = {}) => {
     const headers = new Headers(options.headers || {});
 
@@ -202,34 +203,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    if (currentToken) {
-      headers.set('Authorization', `Bearer ${currentToken}`);
+    if (currentToken) headers.set('Authorization', `Bearer ${currentToken}`);
+
+    // The vault key never leaves this browser except over same-origin HTTPS API
+    // requests. It encrypts Meta App Secret and Page/User access tokens at rest.
+    if (typeof window !== 'undefined') {
+      headers.set('X-PageManager-Vault-Key', getOrCreateMetaVaultKey());
     }
 
     if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
       headers.set('Content-Type', 'application/json');
     }
 
-    return fetch(path, {
-      ...options,
-      headers,
-    });
+    return fetch(path, { ...options, headers });
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        loading,
-        isConfigured,
-        login,
-        loginWithGoogle,
-        register,
-        logout,
-        apiFetch,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user,
+      token,
+      loading,
+      isConfigured,
+      login,
+      loginWithGoogle,
+      register,
+      logout,
+      apiFetch,
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -237,8 +237,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };

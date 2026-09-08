@@ -1,11 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
-import { getAdminAuth, isFirebaseAdminConfigured } from '../services/firebaseAdmin';
+import { verifyFirebaseIdToken } from '../services/firebaseRest';
 
 export interface AuthenticatedUser {
-  id: string; // Firebase Auth UID
+  id: string;
   uid: string;
   email?: string;
   displayName?: string;
+  /** Raw Firebase ID token used by server-side Firebase REST calls. */
+  idToken: string;
 }
 
 export async function authenticateRequest(req: Request): Promise<AuthenticatedUser | null> {
@@ -14,30 +16,30 @@ export async function authenticateRequest(req: Request): Promise<AuthenticatedUs
     return null;
   }
 
-  const token = authHeader.split('Bearer ')[1]?.trim();
+  const token = authHeader.slice('Bearer '.length).trim();
   if (!token) return null;
 
   try {
-    if (isFirebaseAdminConfigured()) {
-      const decoded = await getAdminAuth().verifyIdToken(token);
-      return {
-        id: decoded.uid,
-        uid: decoded.uid,
-        email: decoded.email,
-        displayName: decoded.name,
-      };
-    }
+    const identity = await verifyFirebaseIdToken(token);
+    return {
+      id: identity.uid,
+      uid: identity.uid,
+      email: identity.email,
+      displayName: identity.displayName,
+      idToken: token,
+    };
   } catch (err: any) {
-    console.error('Firebase verifyIdToken error:', err.message);
+    console.error('Firebase ID token verification error:', err?.message || err);
+    return null;
   }
-
-  return null;
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const user = await authenticateRequest(req);
   if (!user) {
-    return res.status(401).json({ error: 'Chưa xác thực hoặc phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' });
+    return res.status(401).json({
+      error: 'Chưa xác thực hoặc phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+    });
   }
   (req as any).user = user;
   next();

@@ -1,11 +1,11 @@
 import { MetaApiError } from './metaError';
 
-export function getGraphApiVersion(): string {
-  return process.env.META_GRAPH_API_VERSION || 'v19.0';
+export function getGraphApiVersion(version?: string): string {
+  return version || process.env.META_GRAPH_API_VERSION || 'v23.0';
 }
 
-export function getGraphBaseUrl(): string {
-  return `https://graph.facebook.com/${getGraphApiVersion()}`;
+export function getGraphBaseUrl(version?: string): string {
+  return `https://graph.facebook.com/${getGraphApiVersion(version)}`;
 }
 
 export interface MetaTokenExchangeResult {
@@ -15,21 +15,24 @@ export interface MetaTokenExchangeResult {
   metaUserId: string;
 }
 
-/**
- * Builds the Meta OAuth 2.0 authorization dialog URL
- */
-export function getOAuthUrl(redirectUri: string, state: string = ''): string {
-  const appId = process.env.META_APP_ID;
-  if (!appId) {
-    throw new Error('Biến môi trường META_APP_ID chưa được cấu hình.');
-  }
+export function getOAuthUrl(
+  redirectUri: string,
+  state: string,
+  appId: string,
+  graphApiVersion?: string
+): string {
+  if (!appId) throw new Error('Meta App ID chưa được cấu hình.');
 
-  const version = getGraphApiVersion();
   const permissions = [
     'pages_show_list',
     'pages_read_engagement',
     'pages_manage_posts',
-    'pages_manage_engagement',
+    'pages_manage_metadata',
+    'pages_messaging',
+    'instagram_basic',
+    'instagram_content_publish',
+    'instagram_manage_comments',
+    'instagram_manage_messages',
   ].join(',');
 
   const params = new URLSearchParams({
@@ -38,67 +41,70 @@ export function getOAuthUrl(redirectUri: string, state: string = ''): string {
     state,
     response_type: 'code',
     scope: permissions,
+    auth_type: 'rerequest',
+    display: 'popup',
   });
 
-  return `https://www.facebook.com/${version}/dialog/oauth?${params.toString()}`;
+  return `https://www.facebook.com/${getGraphApiVersion(graphApiVersion)}/dialog/oauth?${params.toString()}`;
 }
 
-/**
- * Exchanges authorization code for a User Access Token,
- * and upgrades to a 60-day Long-Lived User Access Token.
- */
+async function postTokenRequest(params: URLSearchParams, graphApiVersion?: string): Promise<any> {
+  const response = await fetch(`${getGraphBaseUrl(graphApiVersion)}/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) throw MetaApiError.fromGraphResponse(data);
+  return data;
+}
+
 export async function exchangeCodeForUserToken(
   code: string,
-  redirectUri: string
+  redirectUri: string,
+  appId: string,
+  appSecret: string,
+  graphApiVersion?: string
 ): Promise<MetaTokenExchangeResult> {
-  const appId = process.env.META_APP_ID;
-  const appSecret = process.env.META_APP_SECRET;
-
   if (!appId || !appSecret) {
-    throw new Error('Biến môi trường META_APP_ID hoặc META_APP_SECRET chưa được cấu hình.');
+    throw new Error('Meta App ID hoặc App Secret chưa được cấu hình.');
   }
 
-  const tokenUrl = `${getGraphBaseUrl()}/oauth/access_token?` + new URLSearchParams({
+  const shortData = await postTokenRequest(new URLSearchParams({
     client_id: appId,
     client_secret: appSecret,
     redirect_uri: redirectUri,
     code,
-  }).toString();
+  }), graphApiVersion);
 
-  const response = await fetch(tokenUrl);
-  const data = await response.json();
+  const shortLivedToken = shortData.access_token;
+  if (!shortLivedToken) throw new Error('Meta không trả về User Access Token.');
 
-  if (!response.ok || data.error) {
-    throw MetaApiError.fromGraphResponse(data);
+  let finalAccessToken = shortLivedToken;
+  let expiresIn = shortData.expires_in;
+
+  try {
+    const longData = await postTokenRequest(new URLSearchParams({
+      grant_type: 'fb_exchange_token',
+      client_id: appId,
+      client_secret: appSecret,
+      fb_exchange_token: shortLivedToken,
+    }), graphApiVersion);
+    finalAccessToken = longData.access_token || shortLivedToken;
+    expiresIn = longData.expires_in || expiresIn;
+  } catch (error) {
+    console.warn('Không thể đổi sang long-lived Meta token, dùng token hiện tại:', error);
   }
 
-  const shortLivedToken = data.access_token;
-
-  // Upgrade to long-lived user access token (valid ~60 days)
-  const longLivedUrl = `${getGraphBaseUrl()}/oauth/access_token?` + new URLSearchParams({
-    grant_type: 'fb_exchange_token',
-    client_id: appId,
-    client_secret: appSecret,
-    fb_exchange_token: shortLivedToken,
-  }).toString();
-
-  const longLivedRes = await fetch(longLivedUrl);
-  const longLivedData = await longLivedRes.json();
-
-  const finalAccessToken = longLivedData.access_token || shortLivedToken;
-  const expiresIn = longLivedData.expires_in || data.expires_in;
-
-  // Retrieve user's Facebook Meta ID
-  const meRes = await fetch(`${getGraphBaseUrl()}/me?fields=id,name&access_token=${finalAccessToken}`);
+  const meRes = await fetch(`${getGraphBaseUrl(graphApiVersion)}/me?fields=id,name`, {
+    headers: { Authorization: `Bearer ${finalAccessToken}` },
+  });
   const meData = await meRes.json();
-
-  if (!meRes.ok || meData.error) {
-    throw MetaApiError.fromGraphResponse(meData);
-  }
+  if (!meRes.ok || meData.error) throw MetaApiError.fromGraphResponse(meData);
 
   return {
     accessToken: finalAccessToken,
-    tokenType: data.token_type || 'bearer',
+    tokenType: shortData.token_type || 'bearer',
     expiresIn,
     metaUserId: meData.id,
   };

@@ -18,47 +18,67 @@ export interface FacebookPostDetail {
     data?: Array<{
       type?: string;
       url?: string;
-      media?: {
-        image?: {
-          src?: string;
-        };
-      };
+      media?: { image?: { src?: string } };
     }>;
   };
 }
 
-/**
- * Publishes a text-only post to Facebook Page Feed
- */
-export async function publishTextPost(
-  pageId: string,
+async function graphPost(
+  path: string,
   pageAccessToken: string,
-  message: string
-): Promise<PublishResult> {
-  const url = `${getGraphBaseUrl()}/${pageId}/feed`;
-
-  const params = new URLSearchParams({
-    access_token: pageAccessToken,
-    message,
-  });
-
-  const response = await fetch(url, {
+  params: URLSearchParams,
+  graphApiVersion?: string
+): Promise<any> {
+  const response = await fetch(`${getGraphBaseUrl(graphApiVersion)}/${path}`, {
     method: 'POST',
     headers: {
+      Authorization: `Bearer ${pageAccessToken}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: params.toString(),
   });
-
   const data = await response.json();
+  if (!response.ok || data.error) throw MetaApiError.fromGraphResponse(data);
+  return data;
+}
 
-  if (!response.ok || data.error) {
-    throw MetaApiError.fromGraphResponse(data);
+async function graphDelete(
+  path: string,
+  pageAccessToken: string,
+  graphApiVersion?: string
+): Promise<any> {
+  const response = await fetch(`${getGraphBaseUrl(graphApiVersion)}/${path}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${pageAccessToken}`,
+    },
+  });
+
+  let data: any = {};
+  try {
+    data = await response.json();
+  } catch {
+    data = {};
   }
 
-  const postId = data.id; // Usually "PAGEID_POSTID"
-  const permalink = await fetchPostPermalink(postId, pageAccessToken);
+  if (!response.ok || data.error) throw MetaApiError.fromGraphResponse(data);
+  return data;
+}
 
+export async function publishTextPost(
+  pageId: string,
+  pageAccessToken: string,
+  message: string,
+  graphApiVersion?: string
+): Promise<PublishResult> {
+  const data = await graphPost(
+    `${encodeURIComponent(pageId)}/feed`,
+    pageAccessToken,
+    new URLSearchParams({ message }),
+    graphApiVersion
+  );
+  const postId = data.id;
+  const permalink = await fetchPostPermalink(postId, pageAccessToken, graphApiVersion);
   return {
     facebookPostId: postId,
     permalink: permalink || `https://www.facebook.com/${postId}`,
@@ -66,40 +86,21 @@ export async function publishTextPost(
   };
 }
 
-/**
- * Publishes a post with a link to Facebook Page Feed
- */
 export async function publishLinkPost(
   pageId: string,
   pageAccessToken: string,
   message: string,
-  link: string
+  link: string,
+  graphApiVersion?: string
 ): Promise<PublishResult> {
-  const url = `${getGraphBaseUrl()}/${pageId}/feed`;
-
-  const params = new URLSearchParams({
-    access_token: pageAccessToken,
-    message,
-    link,
-  });
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
-  });
-
-  const data = await response.json();
-
-  if (!response.ok || data.error) {
-    throw MetaApiError.fromGraphResponse(data);
-  }
-
+  const data = await graphPost(
+    `${encodeURIComponent(pageId)}/feed`,
+    pageAccessToken,
+    new URLSearchParams({ message, link }),
+    graphApiVersion
+  );
   const postId = data.id;
-  const permalink = await fetchPostPermalink(postId, pageAccessToken);
-
+  const permalink = await fetchPostPermalink(postId, pageAccessToken, graphApiVersion);
   return {
     facebookPostId: postId,
     permalink: permalink || `https://www.facebook.com/${postId}`,
@@ -107,40 +108,21 @@ export async function publishLinkPost(
   };
 }
 
-/**
- * Publishes a single photo post to Facebook Page Photos endpoint
- */
 export async function publishPhotoPost(
   pageId: string,
   pageAccessToken: string,
   caption: string,
-  photoUrl: string
+  photoUrl: string,
+  graphApiVersion?: string
 ): Promise<PublishResult> {
-  const url = `${getGraphBaseUrl()}/${pageId}/photos`;
-
-  const params = new URLSearchParams({
-    access_token: pageAccessToken,
-    url: photoUrl,
-    caption,
-  });
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
-  });
-
-  const data = await response.json();
-
-  if (!response.ok || data.error) {
-    throw MetaApiError.fromGraphResponse(data);
-  }
-
+  const data = await graphPost(
+    `${encodeURIComponent(pageId)}/photos`,
+    pageAccessToken,
+    new URLSearchParams({ caption, url: photoUrl }),
+    graphApiVersion
+  );
   const postId = data.post_id || data.id;
-  const permalink = await fetchPostPermalink(postId, pageAccessToken);
-
+  const permalink = await fetchPostPermalink(postId, pageAccessToken, graphApiVersion);
   return {
     facebookPostId: postId,
     permalink: permalink || `https://www.facebook.com/${postId}`,
@@ -148,37 +130,56 @@ export async function publishPhotoPost(
   };
 }
 
-/**
- * Helper to fetch the permanent canonical link of a Facebook post
- */
-async function fetchPostPermalink(postId: string, pageAccessToken: string): Promise<string | null> {
+async function fetchPostPermalink(
+  postId: string,
+  pageAccessToken: string,
+  graphApiVersion?: string
+): Promise<string | null> {
+  if (!postId) return null;
   try {
-    const url = `${getGraphBaseUrl()}/${postId}?fields=permalink_url&access_token=${pageAccessToken}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
+    const response = await fetch(
+      `${getGraphBaseUrl(graphApiVersion)}/${encodeURIComponent(postId)}?fields=permalink_url`,
+      { headers: { Authorization: `Bearer ${pageAccessToken}` } }
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
     return data.permalink_url || null;
   } catch {
     return null;
   }
 }
 
-/**
- * Fetches published posts from the Facebook Page Feed to synchronize
- */
+export async function deleteFacebookPost(
+  facebookPostId: string,
+  pageAccessToken: string,
+  graphApiVersion?: string
+): Promise<boolean> {
+  if (!facebookPostId) {
+    throw new Error('Thiếu Facebook Post ID để xóa bài viết.');
+  }
+
+  const data = await graphDelete(
+    encodeURIComponent(facebookPostId),
+    pageAccessToken,
+    graphApiVersion
+  );
+
+  // Meta normally returns { success: true }. Some versions may return an empty 2xx body.
+  return data?.success !== false;
+}
+
 export async function getPagePosts(
   pageId: string,
   pageAccessToken: string,
-  limit: number = 25
+  limit = 25,
+  graphApiVersion?: string
 ): Promise<FacebookPostDetail[]> {
-  const url = `${getGraphBaseUrl()}/${pageId}/published_posts?fields=id,message,created_time,permalink_url,attachments{media,type,url}&limit=${limit}&access_token=${pageAccessToken}`;
-
-  const response = await fetch(url);
+  const fields = 'id,message,story,full_picture,created_time,permalink_url,attachments{media,type,url}';
+  const response = await fetch(
+    `${getGraphBaseUrl(graphApiVersion)}/${encodeURIComponent(pageId)}/published_posts?fields=${encodeURIComponent(fields)}&limit=${limit}`,
+    { headers: { Authorization: `Bearer ${pageAccessToken}` } }
+  );
   const data = await response.json();
-
-  if (!response.ok || data.error) {
-    throw MetaApiError.fromGraphResponse(data);
-  }
-
+  if (!response.ok || data.error) throw MetaApiError.fromGraphResponse(data);
   return (data.data || []) as FacebookPostDetail[];
 }

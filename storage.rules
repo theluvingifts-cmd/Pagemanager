@@ -1,17 +1,15 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // Page media is public-read so Meta Graph API can fetch image URLs.
+    // Only the authenticated owner may upload/overwrite their own files.
     match /users/{userId}/{allPaths=**} {
-      allow read: if true; // Public read for uploaded post media
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-    match /media/{userId}/{allPaths=**} {
-      allow read: if true; // Public read so Facebook Graph API can fetch images
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-    match /{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

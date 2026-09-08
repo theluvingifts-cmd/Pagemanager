@@ -17,8 +17,8 @@ export interface Profile {
 }
 
 export interface FacebookPage {
-  id: string; // internal UUID
-  page_id: string; // Facebook Graph Page ID
+  id: string;
+  page_id: string;
   page_name: string;
   page_username?: string;
   page_avatar_url?: string;
@@ -66,12 +66,25 @@ export interface ContentItem {
   media?: MediaItem[];
 }
 
+export interface MetaConfigSummary {
+  configured: boolean;
+  appId: string;
+  appSecretConfigured: boolean;
+  graphApiVersion: string;
+  source: 'saved' | 'environment' | 'none';
+  vaultKeyMatches?: boolean;
+}
+
 export interface SystemConfigStatus {
   status: string;
   appName: string;
   metaConfigured: boolean;
   firebaseConfigured: boolean;
   metaAppId?: string | null;
+  graphApiVersion?: string;
+  metaConfigSource?: string;
   appUrl?: string | null;
   redirectUri: string;
+  hasConnection?: boolean;
+  connectedPagesCount?: number;
 }

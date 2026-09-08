@@ -1,10 +1,120 @@
 @import "tailwindcss";
 
 @layer base {
+  html, body, #root {
+    width: 100%;
+    height: 100%;
+  }
+
   body {
+    margin: 0;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     color: #1e293b;
     background-color: #f8fafc;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  button, input, textarea, select {
+    font: inherit;
+  }
+}
+
+/* Page Manager compact workspace ------------------------------------------------ */
+.pm-content {
+  scrollbar-gutter: stable;
+}
+
+.pm-content > div,
+.pm-content .max-w-7xl,
+.pm-content .max-w-6xl,
+.pm-content .max-w-5xl,
+.pm-content .max-w-4xl {
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.pm-content .rounded-2xl { border-radius: 12px !important; }
+.pm-content .rounded-xl { border-radius: 10px !important; }
+.pm-content .shadow-xs,
+.pm-content .shadow-2xs { box-shadow: none !important; }
+
+.pm-content .p-16 { padding: 2rem !important; }
+.pm-content .p-12 { padding: 1.75rem !important; }
+.pm-content .p-10 { padding: 1.5rem !important; }
+.pm-content .p-8  { padding: 1.25rem !important; }
+.pm-content .p-6  { padding: 1rem !important; }
+.pm-content .p-5  { padding: .875rem !important; }
+.pm-content .p-4  { padding: .75rem !important; }
+
+.pm-content .gap-6 { gap: 1rem !important; }
+.pm-content .gap-5 { gap: .875rem !important; }
+.pm-content .gap-4 { gap: .75rem !important; }
+
+.pm-content .space-y-8 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem !important; }
+.pm-content .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: .875rem !important; }
+.pm-content .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: .75rem !important; }
+.pm-content .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: .65rem !important; }
+
+.pm-content .pb-16,
+.pm-content .pb-12,
+.pm-content .pb-10 { padding-bottom: 1rem !important; }
+
+.pm-content .text-2xl {
+  font-size: 1.25rem !important;
+  line-height: 1.65rem !important;
+}
+
+.pm-content .text-xl {
+  font-size: 1.1rem !important;
+  line-height: 1.5rem !important;
+}
+
+.pm-content table th {
+  padding-top: .55rem !important;
+  padding-bottom: .55rem !important;
+  font-size: 10px !important;
+}
+
+.pm-content table td {
+  padding-top: .6rem !important;
+  padding-bottom: .6rem !important;
+}
+
+.pm-content input:not([type="checkbox"]):not([type="radio"]),
+.pm-content select {
+  min-height: 34px;
+}
+
+.pm-content textarea {
+  line-height: 1.45;
+}
+
+.pm-content button,
+.pm-content a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pm-content .border-slate-200 {
+  border-color: #e2e8f0 !important;
+}
+
+.pm-content .bg-slate-50\/70,
+.pm-content .bg-slate-50\/60,
+.pm-content .bg-slate-50\/50 {
+  background-color: rgba(248, 250, 252, .72) !important;
+}
+
+/* Messenger should behave like a desktop inbox, not a stacked landing page. */
+.pm-messages {
+  min-height: 0;
+}
+
+@media (min-width: 1024px) {
+  .pm-messages .messenger-workspace {
+    height: calc(100vh - 126px);
+    min-height: 520px;
   }
 }
 
@@ -14,15 +124,9 @@
   height: 6px;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 9999px;
 }
-
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
