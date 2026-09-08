@@ -34,6 +34,16 @@ function readAppletConfig(): any {
   return {};
 }
 
+function hasExternalFirebaseOverride(): boolean {
+  return Boolean(
+    String(
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.VITE_FIREBASE_PROJECT_ID ||
+      ''
+    ).trim()
+  );
+}
+
 export function getFirebaseRuntimeConfig(): FirebaseRuntimeConfig {
   if (cachedConfig) return cachedConfig;
 
@@ -52,14 +62,15 @@ export function getFirebaseRuntimeConfig(): FirebaseRuntimeConfig {
 
   const databaseId =
     process.env.FIRESTORE_DATABASE_ID ||
-    applet.firestoreDatabaseId ||
-    '(default)';
+    process.env.VITE_FIRESTORE_DATABASE_ID ||
+    (hasExternalFirebaseOverride() ? '(default)' : (applet.firestoreDatabaseId || '(default)'));
 
   const storageBucket =
     process.env.FIREBASE_STORAGE_BUCKET ||
     process.env.VITE_FIREBASE_STORAGE_BUCKET ||
-    applet.storageBucket ||
-    (projectId ? `${projectId}.firebasestorage.app` : '');
+    (hasExternalFirebaseOverride()
+      ? (projectId ? `${projectId}.firebasestorage.app` : '')
+      : (applet.storageBucket || (projectId ? `${projectId}.firebasestorage.app` : '')));
 
   cachedConfig = { apiKey, projectId, databaseId, storageBucket };
   return cachedConfig;
@@ -86,11 +97,6 @@ async function parseError(response: Response, fallback: string): Promise<Error> 
   return error;
 }
 
-/**
- * Verify a Firebase Authentication ID token without requiring a Firebase Admin
- * service account. Identity Toolkit validates the token against the Firebase
- * project and returns the canonical localId (UID).
- */
 export async function verifyFirebaseIdToken(idToken: string): Promise<FirebaseIdentity> {
   const { apiKey } = getFirebaseRuntimeConfig();
   if (!apiKey) {
@@ -316,11 +322,6 @@ export async function deleteDocument(
   }
 }
 
-/**
- * Uploads a file through the Firebase Storage REST endpoint using the current
- * Firebase user's ID token, so Storage Security Rules are enforced and no
- * server service-account IAM role is required.
- */
 export async function uploadStorageObject(
   idToken: string,
   storagePath: string,
@@ -329,11 +330,6 @@ export async function uploadStorageObject(
 ): Promise<string> {
   const { storageBucket, projectId } = getFirebaseRuntimeConfig();
 
-  // Firebase has used both bucket naming conventions depending on when the
-  // project was created. AI Studio projects do not always expose
-  // VITE_FIREBASE_STORAGE_BUCKET, so a guessed bucket can return HTTP 404 even
-  // though Firebase Storage is already enabled. Try the configured value first
-  // and then both official project bucket conventions.
   const candidates = Array.from(new Set([
     storageBucket,
     projectId ? `${projectId}.firebasestorage.app` : '',
@@ -361,8 +357,6 @@ export async function uploadStorageObject(
       return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(storagePath)}?alt=media`;
     }
 
-    // 404 means the bucket name itself was not found. Try the alternate Firebase
-    // naming convention before surfacing an error to the UI.
     if (response.status === 404) {
       notFoundBuckets.push(bucket);
       continue;

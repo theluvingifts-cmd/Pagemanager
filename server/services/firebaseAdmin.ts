@@ -15,6 +15,16 @@ export function loadAppletConfig(): any {
   return null;
 }
 
+function hasExternalFirebaseOverride(): boolean {
+  return Boolean(
+    String(
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.VITE_FIREBASE_PROJECT_ID ||
+      ''
+    ).trim()
+  );
+}
+
 export function initFirebaseAdmin(): App | null {
   const currentApps = getApps();
   if (currentApps.length > 0) {
@@ -25,17 +35,17 @@ export function initFirebaseAdmin(): App | null {
     const appletConfig = loadAppletConfig();
     const projectId =
       process.env.FIREBASE_PROJECT_ID ||
-      appletConfig?.projectId ||
       process.env.VITE_FIREBASE_PROJECT_ID ||
+      appletConfig?.projectId ||
       '';
 
     const storageBucket =
       process.env.FIREBASE_STORAGE_BUCKET ||
-      appletConfig?.storageBucket ||
       process.env.VITE_FIREBASE_STORAGE_BUCKET ||
-      (projectId ? `${projectId}.firebasestorage.app` : undefined);
+      (hasExternalFirebaseOverride()
+        ? (projectId ? `${projectId}.firebasestorage.app` : undefined)
+        : (appletConfig?.storageBucket || (projectId ? `${projectId}.firebasestorage.app` : undefined)));
 
-    // Option 1: Service Account JSON string in environment variable
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
       return initializeApp({
@@ -45,7 +55,6 @@ export function initFirebaseAdmin(): App | null {
       });
     }
 
-    // Option 2: Individual service account env variables
     if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
       const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
       return initializeApp({
@@ -59,7 +68,6 @@ export function initFirebaseAdmin(): App | null {
       });
     }
 
-    // Option 3: Application Default Credentials or Project ID
     if (projectId) {
       try {
         return initializeApp({
@@ -88,7 +96,11 @@ export function isFirebaseAdminConfigured(): boolean {
   initFirebaseAdmin();
   if (getApps().length > 0) return true;
   const appletConfig = loadAppletConfig();
-  return Boolean(appletConfig?.projectId);
+  return Boolean(
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    appletConfig?.projectId
+  );
 }
 
 export function getAdminAuth(): Auth {
@@ -102,7 +114,12 @@ export function getAdminDb(): Firestore {
   if (getApps().length === 0) throw new Error('Firebase Admin is not configured. Please provide Firebase credentials.');
   const app = getApps()[0];
   const appletConfig = loadAppletConfig();
-  const databaseId = process.env.FIRESTORE_DATABASE_ID || appletConfig?.firestoreDatabaseId;
+
+  const databaseId =
+    process.env.FIRESTORE_DATABASE_ID ||
+    process.env.VITE_FIRESTORE_DATABASE_ID ||
+    (hasExternalFirebaseOverride() ? undefined : appletConfig?.firestoreDatabaseId);
+
   return databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
 

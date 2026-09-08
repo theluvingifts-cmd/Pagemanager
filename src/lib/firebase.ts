@@ -7,14 +7,30 @@ import appletConfig from '../../firebase-applet-config.json';
 const meta = import.meta as any;
 const env = meta.env || {};
 
+/**
+ * IMPORTANT:
+ * When VITE_FIREBASE_PROJECT_ID is provided (Vercel / external Firebase project),
+ * environment variables take priority over AI Studio's firebase-applet-config.json.
+ * This lets production use a normal Firebase project while AI Studio Preview can
+ * still fall back to the generated applet config.
+ */
+const hasExternalFirebaseOverride = Boolean(
+  String(env.VITE_FIREBASE_PROJECT_ID || '').trim()
+);
+
 export const firebaseConfig = {
-  apiKey: appletConfig?.apiKey || env.VITE_FIREBASE_API_KEY || '',
-  authDomain: appletConfig?.authDomain || env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: appletConfig?.projectId || env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: appletConfig?.storageBucket || env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: appletConfig?.messagingSenderId || env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: appletConfig?.appId || env.VITE_FIREBASE_APP_ID || '',
-  firestoreDatabaseId: appletConfig?.firestoreDatabaseId || '',
+  apiKey: env.VITE_FIREBASE_API_KEY || appletConfig?.apiKey || '',
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || appletConfig?.authDomain || '',
+  projectId: env.VITE_FIREBASE_PROJECT_ID || appletConfig?.projectId || '',
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || appletConfig?.storageBucket || '',
+  messagingSenderId:
+    env.VITE_FIREBASE_MESSAGING_SENDER_ID || appletConfig?.messagingSenderId || '',
+  appId: env.VITE_FIREBASE_APP_ID || appletConfig?.appId || '',
+  // Normal Firebase projects should use the default database unless explicitly
+  // configured otherwise. Never inherit AI Studio's custom DB id after switching project.
+  firestoreDatabaseId:
+    env.VITE_FIRESTORE_DATABASE_ID ||
+    (hasExternalFirebaseOverride ? '' : (appletConfig?.firestoreDatabaseId || '')),
 };
 
 export const isFirebaseConfigured = (): boolean => {
