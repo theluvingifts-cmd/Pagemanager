@@ -7,18 +7,34 @@ import appletConfig from '../../firebase-applet-config.json';
 const meta = import.meta as any;
 const env = meta.env || {};
 
+const PROD_HOST = 'pagemanager.vercel.app';
+
 /**
- * IMPORTANT:
- * When VITE_FIREBASE_PROJECT_ID is provided (Vercel / external Firebase project),
- * environment variables take priority over AI Studio's firebase-applet-config.json.
- * This lets production use a normal Firebase project while AI Studio Preview can
- * still fall back to the generated applet config.
+ * Firebase Web config is not a secret. For the production hostname we pin the
+ * frontend to the dedicated production Firebase project so an old AI Studio
+ * applet config or a stale/missing Vercel VITE_* build variable can never route
+ * production authentication back to the AI Studio Firebase project.
  */
+const productionFirebaseConfig = {
+  apiKey: 'AIzaSyCzEhBv82ne0ETNcR6gT4T5UouBQzcEd8k',
+  authDomain: 'pagemanager-prod.firebaseapp.com',
+  projectId: 'pagemanager-prod',
+  storageBucket: 'pagemanager-prod.firebasestorage.app',
+  messagingSenderId: '1048744114551',
+  appId: '1:1048744114551:web:7d77b51bcbcb2985710972',
+  firestoreDatabaseId: '',
+};
+
+const runtimeHost =
+  typeof window !== 'undefined' ? String(window.location.hostname || '').toLowerCase() : '';
+
+const forceProductionFirebase = runtimeHost === PROD_HOST;
+
 const hasExternalFirebaseOverride = Boolean(
   String(env.VITE_FIREBASE_PROJECT_ID || '').trim()
 );
 
-export const firebaseConfig = {
+const externalFirebaseConfig = {
   apiKey: env.VITE_FIREBASE_API_KEY || appletConfig?.apiKey || '',
   authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || appletConfig?.authDomain || '',
   projectId: env.VITE_FIREBASE_PROJECT_ID || appletConfig?.projectId || '',
@@ -26,12 +42,30 @@ export const firebaseConfig = {
   messagingSenderId:
     env.VITE_FIREBASE_MESSAGING_SENDER_ID || appletConfig?.messagingSenderId || '',
   appId: env.VITE_FIREBASE_APP_ID || appletConfig?.appId || '',
-  // Normal Firebase projects should use the default database unless explicitly
-  // configured otherwise. Never inherit AI Studio's custom DB id after switching project.
   firestoreDatabaseId:
     env.VITE_FIRESTORE_DATABASE_ID ||
     (hasExternalFirebaseOverride ? '' : (appletConfig?.firestoreDatabaseId || '')),
 };
+
+export const firebaseConfig = forceProductionFirebase
+  ? productionFirebaseConfig
+  : externalFirebaseConfig;
+
+export const firebaseRuntimeInfo = {
+  host: runtimeHost || '(server/build)',
+  source: forceProductionFirebase
+    ? 'pinned-production'
+    : hasExternalFirebaseOverride
+      ? 'environment'
+      : 'ai-studio-fallback',
+  projectId: firebaseConfig.projectId,
+  authDomain: firebaseConfig.authDomain,
+  storageBucket: firebaseConfig.storageBucket,
+};
+
+if (typeof window !== 'undefined') {
+  console.info('[PageManager Firebase Runtime]', firebaseRuntimeInfo);
+}
 
 export const isFirebaseConfigured = (): boolean => {
   return Boolean(
