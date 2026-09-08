@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "express",
+  "buildCommand": "vite build",
+  "functions": {
+    "server.ts": {
+      "includeFiles": "dist/**"
+    }
+  }
+}
