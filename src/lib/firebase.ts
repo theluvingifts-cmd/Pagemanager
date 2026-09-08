@@ -9,12 +9,6 @@ const env = meta.env || {};
 
 const PROD_HOST = 'pagemanager.vercel.app';
 
-/**
- * Firebase Web config is not a secret. For the production hostname we pin the
- * frontend to the dedicated production Firebase project so an old AI Studio
- * applet config or a stale/missing Vercel VITE_* build variable can never route
- * production authentication back to the AI Studio Firebase project.
- */
 const productionFirebaseConfig = {
   apiKey: 'AIzaSyCzEhBv82ne0ETNcR6gT4T5UouBQzcEd8k',
   authDomain: 'pagemanager-prod.firebaseapp.com',
@@ -51,6 +45,18 @@ export const firebaseConfig = forceProductionFirebase
   ? productionFirebaseConfig
   : externalFirebaseConfig;
 
+/**
+ * IMPORTANT:
+ * AI Studio itself may initialize a DEFAULT Firebase app before Page Manager runs.
+ * Reusing getApp() without a name therefore silently reuses the old AI Studio
+ * project (fit-world-rghtt), even when firebaseConfig points at pagemanager-prod.
+ *
+ * Page Manager must own a NAMED Firebase app so it can never inherit AI Studio's
+ * default Firebase instance.
+ */
+const CLIENT_APP_NAME = `pagemanager-client-${String(firebaseConfig.projectId || 'unknown')
+  .replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+
 export const firebaseRuntimeInfo = {
   host: runtimeHost || '(server/build)',
   source: forceProductionFirebase
@@ -58,6 +64,7 @@ export const firebaseRuntimeInfo = {
     : hasExternalFirebaseOverride
       ? 'environment'
       : 'ai-studio-fallback',
+  appName: CLIENT_APP_NAME,
   projectId: firebaseConfig.projectId,
   authDomain: firebaseConfig.authDomain,
   storageBucket: firebaseConfig.storageBucket,
@@ -83,9 +90,11 @@ let storage: FirebaseStorage | null = null;
 
 function getOrInitApp(): FirebaseApp | null {
   if (!isFirebaseConfigured()) return null;
-  if (!app) {
-    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-  }
+  if (app) return app;
+
+  const existing = getApps().find(candidate => candidate.name === CLIENT_APP_NAME);
+  app = existing || initializeApp(firebaseConfig, CLIENT_APP_NAME);
+
   return app;
 }
 
@@ -100,7 +109,7 @@ if (isFirebaseConfigured()) {
       storage = getStorage(initializedApp);
     }
   } catch (error) {
-    console.error('Failed to initialize Firebase client:', error);
+    console.error('Failed to initialize Page Manager Firebase client:', error);
   }
 }
 
