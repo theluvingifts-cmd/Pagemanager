@@ -1,12 +1,12 @@
 {
-  "projectId": "fit-world-rghtt",
-  "appId": "1:192148108199:web:fb4c42f4af4d9ae06e7c82",
-  "apiKey": "AIzaSyA3nfVN-urSz2Z7RNlD8pLMwJdzYVkwKXk",
-  "authDomain": "fit-world-rghtt.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-contentcontrolce-440eab4c-f8cc-43ae-b08e-23faeee8ba60",
-  "storageBucket": "fit-world-rghtt.firebasestorage.app",
-  "messagingSenderId": "192148108199",
-  "measurementId": "",
-  "oAuthClientId": "192148108199-mpk0ifdr7rtsj0865mbcbjlmpkl3h9o0.apps.googleusercontent.com",
+  "projectId": "pagemanager-prod",
+  "appId": "1:1048744114551:web:7d77b51bcbcb2985710972",
+  "apiKey": "AIzaSyCzEhBv82ne0ETNcR6gT4T5UouBQzcEd8k",
+  "authDomain": "pagemanager-prod.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "pagemanager-prod.firebasestorage.app",
+  "messagingSenderId": "1048744114551",
+  "measurementId": "G-FPXXMPJ6LK",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }
