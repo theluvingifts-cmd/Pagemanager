@@ -1,5 +1,5 @@
-import { getGraphBaseUrl } from './metaOAuthService';
-import { MetaApiError } from './metaError';
+import { getGraphBaseUrl } from './metaOAuthService.js';
+import { MetaApiError } from './metaError.js';
 
 export interface PublishResult {
   facebookPostId: string;

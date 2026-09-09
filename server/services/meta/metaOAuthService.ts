@@ -1,4 +1,4 @@
-import { MetaApiError } from './metaError';
+import { MetaApiError } from './metaError.js';
 
 export function getGraphApiVersion(version?: string): string {
   return version || process.env.META_GRAPH_API_VERSION || 'v23.0';

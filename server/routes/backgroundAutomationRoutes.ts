@@ -1,11 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { authenticateRequest } from '../middleware/authMiddleware';
-import { queryDocuments, setDocument } from '../services/firebaseRest';
-import { decryptToken } from '../services/meta/metaTokenService';
-import { getVaultKeyFromRequest } from '../services/meta/metaConfigService';
-import { encryptBackgroundPageToken, getBackgroundEncryptionKey } from '../services/automation/backgroundTokenService';
-import { getAdminDb } from '../services/firebaseAdmin';
-import { runAllBackgroundMessengerAutomations, runBackgroundMessengerAutomationForPage } from '../services/automation/messengerAutomationWorker';
+import { authenticateRequest } from '../middleware/authMiddleware.js';
+import { queryDocuments, setDocument } from '../services/firebaseRest.js';
+import { decryptToken } from '../services/meta/metaTokenService.js';
+import { getVaultKeyFromRequest } from '../services/meta/metaConfigService.js';
+import { encryptBackgroundPageToken, getBackgroundEncryptionKey } from '../services/automation/backgroundTokenService.js';
+import { getAdminDb } from '../services/firebaseAdmin.js';
+import { runAllBackgroundMessengerAutomations, runBackgroundMessengerAutomationForPage } from '../services/automation/messengerAutomationWorker.js';
 
 export const backgroundAutomationRouter = Router();
 

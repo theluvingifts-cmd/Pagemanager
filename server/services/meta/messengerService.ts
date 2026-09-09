@@ -1,4 +1,4 @@
-import { getGraphBaseUrl } from './metaOAuthService';
+import { getGraphBaseUrl } from './metaOAuthService.js';
 
 export type MessengerAttachmentType = 'image' | 'video' | 'audio' | 'file' | 'share' | 'unknown';
 

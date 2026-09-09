@@ -1,4 +1,4 @@
-import { decryptToken, encryptToken } from '../meta/metaTokenService';
+import { decryptToken, encryptToken } from '../meta/metaTokenService.js';
 
 export function getBackgroundEncryptionKey(): string {
   const value = String(

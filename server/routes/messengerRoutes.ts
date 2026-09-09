@@ -1,15 +1,15 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
-import { authenticateRequest } from '../middleware/authMiddleware';
-import { getDocument, queryDocuments, setDocument } from '../services/firebaseRest';
-import { decryptToken } from '../services/meta/metaTokenService';
-import { getVaultKeyFromRequest, resolveMetaConfig } from '../services/meta/metaConfigService';
+import { authenticateRequest } from '../middleware/authMiddleware.js';
+import { getDocument, queryDocuments, setDocument } from '../services/firebaseRest.js';
+import { decryptToken } from '../services/meta/metaTokenService.js';
+import { getVaultKeyFromRequest, resolveMetaConfig } from '../services/meta/metaConfigService.js';
 import {
   DEFAULT_MESSENGER_CRM,
   MessengerCRMContactData,
   mergeMessengerCRM,
   normalizeMessengerCRM,
-} from '../services/crm/messengerCrmService';
+} from '../services/crm/messengerCrmService.js';
 import {
   getMessengerConversation,
   listMessengerConversations,
@@ -17,7 +17,7 @@ import {
   MessengerGraphError,
   sendMessengerAttachmentBuffer,
   sendMessengerText,
-} from '../services/meta/messengerService';
+} from '../services/meta/messengerService.js';
 
 export const messengerRouter = Router();
 const upload = multer({

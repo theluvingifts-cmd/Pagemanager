@@ -7,8 +7,8 @@ import {
   isFirebaseRestConfigured,
   queryDocuments,
   uploadStorageObject,
-} from '../services/firebaseRest';
-import { authenticateRequest } from '../middleware/authMiddleware';
+} from '../services/firebaseRest.js';
+import { authenticateRequest } from '../middleware/authMiddleware.js';
 
 export const mediaRouter = Router();
 

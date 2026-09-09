@@ -1,16 +1,16 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { authenticateRequest } from '../middleware/authMiddleware';
+import { authenticateRequest } from '../middleware/authMiddleware.js';
 import {
   getDocument,
   queryDocuments,
   setDocument,
-} from '../services/firebaseRest';
+} from '../services/firebaseRest.js';
 import {
   createGeminiResponse,
   getGeminiModel,
   isGeminiConfigured,
-} from '../services/ai/geminiService';
+} from '../services/ai/geminiService.js';
 
 export const aiRouter = Router();
 

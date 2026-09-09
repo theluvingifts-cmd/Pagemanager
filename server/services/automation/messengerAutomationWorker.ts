@@ -1,11 +1,11 @@
 import { FieldValue } from 'firebase-admin/firestore';
-import { getAdminDb } from '../firebaseAdmin';
+import { getAdminDb } from '../firebaseAdmin.js';
 import {
   getMessengerConversation,
   listMessengerConversations,
   sendMessengerText,
-} from '../meta/messengerService';
-import { decryptBackgroundPageToken } from './backgroundTokenService';
+} from '../meta/messengerService.js';
+import { decryptBackgroundPageToken } from './backgroundTokenService.js';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;

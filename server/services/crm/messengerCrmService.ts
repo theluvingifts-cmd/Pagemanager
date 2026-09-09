@@ -3,10 +3,10 @@ export {
   DEFAULT_CUSTOMER_CRM as DEFAULT_MESSENGER_CRM,
   mergeCustomerCRM as mergeMessengerCRM,
   normalizeCustomerCRM as normalizeMessengerCRM,
-} from './customerCrmService';
+} from './customerCrmService.js';
 export type {
   CustomerCRMActivityType as MessengerCRMActivityType,
   CustomerCRMActivity as MessengerCRMActivity,
   CustomerCRMContactData as MessengerCRMContactData,
   MergeCustomerCRMContext as MergeMessengerCRMContext,
-} from './customerCrmService';
+} from './customerCrmService.js';

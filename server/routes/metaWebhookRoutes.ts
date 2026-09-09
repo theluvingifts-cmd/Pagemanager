@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import express, { Router, Request, Response } from 'express';
-import { getAdminDb } from '../services/firebaseAdmin';
-import { runBackgroundMessengerAutomationForPage } from '../services/automation/messengerAutomationWorker';
+import { getAdminDb } from '../services/firebaseAdmin.js';
+import { runBackgroundMessengerAutomationForPage } from '../services/automation/messengerAutomationWorker.js';
 
 export const metaWebhookRouter = Router();
 

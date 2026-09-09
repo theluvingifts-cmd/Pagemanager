@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyFirebaseIdToken } from '../services/firebaseRest';
+import { verifyFirebaseIdToken } from '../services/firebaseRest.js';
 
 export interface AuthenticatedUser {
   id: string;

@@ -1,4 +1,4 @@
-import { getGraphBaseUrl } from './metaOAuthService';
+import { getGraphBaseUrl } from './metaOAuthService.js';
 
 export class InstagramGraphError extends Error {
   status: number;

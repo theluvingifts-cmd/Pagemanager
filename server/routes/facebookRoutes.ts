@@ -1,9 +1,9 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getOAuthUrl, exchangeCodeForUserToken } from '../services/meta/metaOAuthService';
-import { getManagedPages, testPageConnection } from '../services/meta/metaPageService';
-import { getPagePosts } from '../services/meta/metaPostService';
-import { encryptToken, decryptToken } from '../services/meta/metaTokenService';
+import { getOAuthUrl, exchangeCodeForUserToken } from '../services/meta/metaOAuthService.js';
+import { getManagedPages, testPageConnection } from '../services/meta/metaPageService.js';
+import { getPagePosts } from '../services/meta/metaPostService.js';
+import { encryptToken, decryptToken } from '../services/meta/metaTokenService.js';
 import {
   deleteDocument,
   getDocument,
@@ -11,16 +11,16 @@ import {
   queryDocuments,
   setDocument,
   updateDocument,
-} from '../services/firebaseRest';
-import { authenticateRequest } from '../middleware/authMiddleware';
-import { MetaApiError } from '../services/meta/metaError';
+} from '../services/firebaseRest.js';
+import { authenticateRequest } from '../middleware/authMiddleware.js';
+import { MetaApiError } from '../services/meta/metaError.js';
 import {
   deleteMetaConfig,
   getMetaConfigSummary,
   getVaultKeyFromRequest,
   resolveMetaConfig,
   saveMetaConfig,
-} from '../services/meta/metaConfigService';
+} from '../services/meta/metaConfigService.js';
 
 export const facebookRouter = Router();
 const OAUTH_TTL_MS = 10 * 60 * 1000;

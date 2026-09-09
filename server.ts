@@ -1,21 +1,21 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
-import { facebookRouter } from './server/routes/facebookRoutes';
-import { contentRouter } from './server/routes/contentRoutes';
-import { mediaRouter } from './server/routes/mediaRoutes';
-import { aiRouter } from './server/routes/aiRoutes';
-import { messengerRouter } from './server/routes/messengerRoutes';
-import { instagramRouter } from './server/routes/instagramRoutes';
-import { metaWebhookRouter } from './server/routes/metaWebhookRoutes';
+import { facebookRouter } from './server/routes/facebookRoutes.js';
+import { contentRouter } from './server/routes/contentRoutes.js';
+import { mediaRouter } from './server/routes/mediaRoutes.js';
+import { aiRouter } from './server/routes/aiRoutes.js';
+import { messengerRouter } from './server/routes/messengerRoutes.js';
+import { instagramRouter } from './server/routes/instagramRoutes.js';
+import { metaWebhookRouter } from './server/routes/metaWebhookRoutes.js';
 import {
   backgroundAutomationRouter,
   startBackgroundAutomationLoop,
-} from './server/routes/backgroundAutomationRoutes';
+} from './server/routes/backgroundAutomationRoutes.js';
 import {
   getFirebaseRuntimeConfig,
   isFirebaseRestConfigured,
-} from './server/services/firebaseRest';
+} from './server/services/firebaseRest.js';
 
 dotenv.config();
 

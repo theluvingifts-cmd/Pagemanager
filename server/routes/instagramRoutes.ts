@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { authenticateRequest } from '../middleware/authMiddleware';
-import { getDocument, queryDocuments, setDocument } from '../services/firebaseRest';
-import { decryptToken } from '../services/meta/metaTokenService';
-import { getVaultKeyFromRequest, resolveMetaConfig } from '../services/meta/metaConfigService';
+import { authenticateRequest } from '../middleware/authMiddleware.js';
+import { getDocument, queryDocuments, setDocument } from '../services/firebaseRest.js';
+import { decryptToken } from '../services/meta/metaTokenService.js';
+import { getVaultKeyFromRequest, resolveMetaConfig } from '../services/meta/metaConfigService.js';
 import {
   deleteInstagramComment,
   getInstagramConversation,
@@ -13,8 +13,8 @@ import {
   listInstagramMedia,
   replyInstagramComment,
   sendInstagramText,
-} from '../services/meta/instagramService';
-import { DEFAULT_CUSTOMER_CRM, mergeCustomerCRM, normalizeCustomerCRM, type CustomerCRMContactData } from '../services/crm/customerCrmService';
+} from '../services/meta/instagramService.js';
+import { DEFAULT_CUSTOMER_CRM, mergeCustomerCRM, normalizeCustomerCRM, type CustomerCRMContactData } from '../services/crm/customerCrmService.js';
 
 export const instagramRouter = Router();
 

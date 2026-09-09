@@ -6,18 +6,18 @@ import {
   isFirebaseRestConfigured,
   queryDocuments,
   updateDocument,
-} from '../services/firebaseRest';
+} from '../services/firebaseRest.js';
 import {
   publishTextPost,
   publishLinkPost,
   publishPhotoPost,
   deleteFacebookPost,
   PublishResult,
-} from '../services/meta/metaPostService';
-import { decryptToken } from '../services/meta/metaTokenService';
-import { getVaultKeyFromRequest, resolveMetaConfig } from '../services/meta/metaConfigService';
-import { MetaApiError } from '../services/meta/metaError';
-import { authenticateRequest } from '../middleware/authMiddleware';
+} from '../services/meta/metaPostService.js';
+import { decryptToken } from '../services/meta/metaTokenService.js';
+import { getVaultKeyFromRequest, resolveMetaConfig } from '../services/meta/metaConfigService.js';
+import { MetaApiError } from '../services/meta/metaError.js';
+import { authenticateRequest } from '../middleware/authMiddleware.js';
 
 export const contentRouter = Router();
 

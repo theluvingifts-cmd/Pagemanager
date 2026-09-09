@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { Request } from 'express';
-import { getDocument, setDocument } from '../firebaseRest';
-import { decryptToken, encryptToken } from './metaTokenService';
+import { getDocument, setDocument } from '../firebaseRest.js';
+import { decryptToken, encryptToken } from './metaTokenService.js';
 
 const VAULT_HEADER = 'x-pagemanager-vault-key';
 const DEFAULT_GRAPH_VERSION = 'v23.0';
