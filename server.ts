@@ -103,26 +103,28 @@ async function attachFrontend() {
   app.use(vite.middlewares);
 }
 
-async function start() {
+async function startLocalServer() {
   await attachFrontend();
 
   const port = Number(process.env.PORT || 3000);
-
-  // Vercel 2026 hỗ trợ root server.ts như Node server thật.
-  // Vì vậy PHẢI listen cả trên Vercel; không dùng api/index.ts wrapper nữa.
   app.listen(port, '0.0.0.0', () => {
-    console.log(`[PAGE MANAGER] listening on ${port} | vercel=${isVercel}`);
-
-    // Không chạy setInterval trong Vercel. Automation nền sẽ đi qua cron/webhook.
-    if (!isVercel) {
-      startBackgroundAutomationLoop();
-    }
+    console.log(`[PAGE MANAGER] listening on ${port} | vercel=false`);
+    startBackgroundAutomationLoop();
   });
 }
 
-void start().catch(error => {
-  console.error('[PAGE MANAGER] Startup failed:', error);
-  process.exitCode = 1;
-});
+// Vercel Express zero-config dùng app export trực tiếp. Không gọi app.listen()
+// đồng thời với export default app vì có thể làm Serverless Function crash khi boot.
+if (isVercel) {
+  void attachFrontend().catch(error => {
+    console.error('[PAGE MANAGER] Vercel initialization failed:', error);
+    process.exitCode = 1;
+  });
+} else {
+  void startLocalServer().catch(error => {
+    console.error('[PAGE MANAGER] Startup failed:', error);
+    process.exitCode = 1;
+  });
+}
 
 export default app;
