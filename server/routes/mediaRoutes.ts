@@ -12,8 +12,14 @@ import { authenticateRequest } from '../middleware/authMiddleware.js';
 
 export const mediaRouter = Router();
 
-const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const isVercel = Boolean(process.env.VERCEL);
+const uploadDir = isVercel ? '' : path.join(process.cwd(), 'uploads');
+
+// /var/task is read-only on Vercel. Local fallback storage is dev-only,
+// so never create the uploads directory while booting a Vercel Function.
+if (!isVercel && !fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -78,11 +84,13 @@ mediaRouter.post('/upload', upload.single('file'), async (req: Request, res: Res
     } catch (storageErr: any) {
       // Local fallback is intentionally restricted to development. Production
       // media must live in Firebase Storage so Meta can fetch it reliably.
-      if (process.env.NODE_ENV === 'production') {
+      if (process.env.NODE_ENV === 'production' || isVercel) {
         throw storageErr;
       }
+
       console.warn('Firebase Storage upload failed; using local dev fallback:', storageErr?.message || storageErr);
       fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
+
       const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
       const protocol = forwardedProto || req.protocol;
       const baseUrl = process.env.APP_URL || `${protocol}://${req.get('host')}`;
