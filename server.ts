@@ -80,21 +80,9 @@ app.use('/api/messenger', messengerRouter);
 app.use('/api/instagram', instagramRouter);
 app.use('/api/automation/background', backgroundAutomationRouter);
 
-// Production (Vercel): phục vụ bundle Vite từ dist.
-// Development / AI Studio: gắn Vite middleware.
-async function attachFrontend() {
-  if (process.env.NODE_ENV === 'production' || isVercel) {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-
-    // Express 4 SPA fallback. API đã mount phía trên nên không bị nuốt thành HTML.
-    app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api/')) return next();
-      return res.sendFile(path.join(distPath, 'index.html'));
-    });
-    return;
-  }
-
+// Local / AI Studio only: attach Vite middleware and start a real listener.
+// Production Vercel serves the Vite dist separately and imports this app via /api.
+async function attachLocalFrontend() {
   const { createServer: createViteServer } = await import('vite');
   const vite = await createViteServer({
     server: { middlewareMode: true },
@@ -104,7 +92,7 @@ async function attachFrontend() {
 }
 
 async function startLocalServer() {
-  await attachFrontend();
+  await attachLocalFrontend();
 
   const port = Number(process.env.PORT || 3000);
   app.listen(port, '0.0.0.0', () => {
@@ -113,14 +101,9 @@ async function startLocalServer() {
   });
 }
 
-// Vercel Express zero-config dùng app export trực tiếp. Không gọi app.listen()
-// đồng thời với export default app vì có thể làm Serverless Function crash khi boot.
-if (isVercel) {
-  void attachFrontend().catch(error => {
-    console.error('[PAGE MANAGER] Vercel initialization failed:', error);
-    process.exitCode = 1;
-  });
-} else {
+// Important: on Vercel, do not start a listener and do not attach static/Vite middleware.
+// The Vercel API wrapper imports the prebuilt backend bundle and exports this Express app.
+if (!isVercel) {
   void startLocalServer().catch(error => {
     console.error('[PAGE MANAGER] Startup failed:', error);
     process.exitCode = 1;
