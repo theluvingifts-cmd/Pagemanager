@@ -1,3 +1,7 @@
-// Vercel serverless entrypoint.
-// Keep this file tiny: the backend itself is bundled by npm run build.
-export { default } from './_vercelHandler.js';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const serverModule = require('../.vercel-build/server.cjs');
+const app = serverModule?.default ?? serverModule;
+
+export default app;
