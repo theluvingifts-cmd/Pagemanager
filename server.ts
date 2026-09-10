@@ -6,6 +6,7 @@ import { contentRouter } from './server/routes/contentRoutes.js';
 import { mediaRouter } from './server/routes/mediaRoutes.js';
 import { aiRouter } from './server/routes/aiRoutes.js';
 import { messengerRouter } from './server/routes/messengerRoutes.js';
+import { messengerTokenRepairMiddleware } from './server/routes/messengerTokenRepairMiddleware.js';
 import { instagramRouter } from './server/routes/instagramRoutes.js';
 import { metaWebhookRouter } from './server/routes/metaWebhookRoutes.js';
 import {
@@ -76,7 +77,12 @@ app.use('/api/facebook', facebookRouter);
 app.use('/api/contents', contentRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/ai', aiRouter);
+
+// Repair legacy AI-Studio/browser encrypted Page tokens before the existing
+// Messenger router reads them. Messenger business logic itself stays intact.
+app.use('/api/messenger', messengerTokenRepairMiddleware);
 app.use('/api/messenger', messengerRouter);
+
 app.use('/api/instagram', instagramRouter);
 app.use('/api/automation/background', backgroundAutomationRouter);
 
