@@ -43,6 +43,12 @@ function normalizeGraphVersion(value?: string): string {
   return version;
 }
 
+function hasServerEncryptionKey(): boolean {
+  return Boolean(
+    String(process.env.TOKEN_ENCRYPTION_KEY || process.env.META_APP_SECRET || '').trim()
+  );
+}
+
 export function getVaultKeyFromRequest(req: Request, required = true): string {
   const raw = req.headers[VAULT_HEADER];
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -82,26 +88,46 @@ async function writeUserFields(user: MetaConfigUser, fields: Record<string, any>
 export async function getMetaConfigSummary(user: MetaConfigUser, vaultKey = ''): Promise<MetaConfigSummary> {
   const userRecord = await getUserRecord(user);
   const data = userRecord?.data || {};
+  const envAppId = String(process.env.META_APP_ID || '').trim();
+  const envSecret = String(process.env.META_APP_SECRET || '').trim();
+  const serverKeyConfigured = hasServerEncryptionKey();
+
   if (data.metaAppId) {
-    const matches = !data.metaVaultKeyHash || (vaultKey ? data.metaVaultKeyHash === vaultFingerprint(vaultKey) : true);
+    const legacyVaultMatches =
+      !data.metaVaultKeyHash ||
+      (vaultKey ? data.metaVaultKeyHash === vaultFingerprint(vaultKey) : true);
+
+    // When a stable server encryption key exists, a different browser vault
+    // must not make the production Meta config look disconnected.
+    const matches = serverKeyConfigured || legacyVaultMatches;
+    const envCanSupplySecret = Boolean(envSecret && (!envAppId || envAppId === String(data.metaAppId)));
+
     return {
-      configured: Boolean(data.metaAppId && data.metaEncryptedAppSecret && matches),
+      configured: Boolean(
+        data.metaAppId &&
+        matches &&
+        (data.metaEncryptedAppSecret || envCanSupplySecret)
+      ),
       appId: String(data.metaAppId || ''),
-      appSecretConfigured: Boolean(data.metaEncryptedAppSecret),
-      graphApiVersion: normalizeGraphVersion(data.metaGraphApiVersion || DEFAULT_GRAPH_VERSION),
+      appSecretConfigured: Boolean(data.metaEncryptedAppSecret || envCanSupplySecret),
+      graphApiVersion: normalizeGraphVersion(
+        data.metaGraphApiVersion ||
+        process.env.META_GRAPH_API_VERSION ||
+        DEFAULT_GRAPH_VERSION
+      ),
       source: 'saved',
       vaultKeyMatches: matches,
     };
   }
 
-  const envAppId = String(process.env.META_APP_ID || '').trim();
-  const envSecret = String(process.env.META_APP_SECRET || '').trim();
   if (envAppId) {
     return {
       configured: Boolean(envAppId && envSecret),
       appId: envAppId,
       appSecretConfigured: Boolean(envSecret),
-      graphApiVersion: normalizeGraphVersion(process.env.META_GRAPH_API_VERSION || DEFAULT_GRAPH_VERSION),
+      graphApiVersion: normalizeGraphVersion(
+        process.env.META_GRAPH_API_VERSION || DEFAULT_GRAPH_VERSION
+      ),
       source: 'environment',
     };
   }
@@ -124,24 +150,50 @@ export async function resolveMetaConfig(
   const data = userRecord?.data || {};
 
   if (data.metaAppId) {
+    const appId = validateAppId(data.metaAppId);
     const result: ResolvedMetaConfig = {
-      appId: validateAppId(data.metaAppId),
-      graphApiVersion: normalizeGraphVersion(data.metaGraphApiVersion),
+      appId,
+      graphApiVersion: normalizeGraphVersion(
+        data.metaGraphApiVersion ||
+        process.env.META_GRAPH_API_VERSION
+      ),
       source: 'saved',
     };
 
     if (requireSecret) {
-      if (!data.metaEncryptedAppSecret) {
-        throw new Error('App Secret chưa được lưu trong Cài đặt & Facebook.');
+      let resolvedSecret = '';
+
+      if (data.metaEncryptedAppSecret) {
+        try {
+          resolvedSecret = decryptToken(
+            String(data.metaEncryptedAppSecret),
+            vaultKey
+          );
+        } catch {
+          // Legacy App Secret may have been encrypted with the AI Studio
+          // browser vault. Production cannot know that browser key.
+        }
       }
-      if (!vaultKey) {
-        throw new Error('Thiếu khóa bảo mật trình duyệt để giải mã App Secret. Hãy lưu cấu hình Meta lại.');
+
+      if (!resolvedSecret) {
+        const envAppId = String(process.env.META_APP_ID || '').trim();
+        const envSecret = String(process.env.META_APP_SECRET || '').trim();
+
+        // Vercel already owns these server-side secrets. Use them as a safe
+        // recovery path so OAuth can reconnect once and re-encrypt Page tokens
+        // with the stable server key.
+        if (envSecret && (!envAppId || envAppId === appId)) {
+          resolvedSecret = envSecret;
+        }
       }
-      try {
-        result.appSecret = decryptToken(String(data.metaEncryptedAppSecret), vaultKey);
-      } catch {
-        throw new Error('Không giải mã được App Secret trên trình duyệt này. Hãy nhập lại App Secret và bấm Lưu cấu hình.');
+
+      if (!resolvedSecret) {
+        throw new Error(
+          'Không giải mã được App Secret đã lưu và server chưa có META_APP_SECRET phù hợp. Hãy nhập lại App Secret trong Cài đặt.'
+        );
       }
+
+      result.appSecret = resolvedSecret;
     }
 
     return result;
@@ -156,7 +208,9 @@ export async function resolveMetaConfig(
   return {
     appId: validateAppId(appId),
     appSecret: requireSecret ? appSecret : undefined,
-    graphApiVersion: normalizeGraphVersion(process.env.META_GRAPH_API_VERSION || DEFAULT_GRAPH_VERSION),
+    graphApiVersion: normalizeGraphVersion(
+      process.env.META_GRAPH_API_VERSION || DEFAULT_GRAPH_VERSION
+    ),
     source: 'environment',
   };
 }
@@ -172,9 +226,15 @@ export async function saveMetaConfig(
   const data = existing?.data || {};
   const now = new Date().toISOString();
   const currentVaultHash = vaultFingerprint(vaultKey);
-  const existingVaultMatches = !data.metaVaultKeyHash || data.metaVaultKeyHash === currentVaultHash;
+  const existingVaultMatches =
+    hasServerEncryptionKey() ||
+    !data.metaVaultKeyHash ||
+    data.metaVaultKeyHash === currentVaultHash;
 
-  let encryptedAppSecret = existingVaultMatches ? (data.metaEncryptedAppSecret || '') : '';
+  let encryptedAppSecret = existingVaultMatches
+    ? (data.metaEncryptedAppSecret || '')
+    : '';
+
   const newSecret = String(input.appSecret || '').trim();
   if (newSecret) {
     if (newSecret.length < 8) throw new Error('App Secret có vẻ không hợp lệ.');
@@ -182,9 +242,20 @@ export async function saveMetaConfig(
   }
 
   if (!encryptedAppSecret) {
-    throw new Error(data.metaEncryptedAppSecret
-      ? 'Khóa bảo mật trình duyệt đã thay đổi. Hãy nhập lại App Secret rồi lưu.'
-      : 'Hãy nhập App Secret lần đầu trước khi lưu cấu hình Meta.');
+    const envAppId = String(process.env.META_APP_ID || '').trim();
+    const envSecret = String(process.env.META_APP_SECRET || '').trim();
+
+    if (envSecret && (!envAppId || envAppId === appId)) {
+      encryptedAppSecret = encryptToken(envSecret, vaultKey);
+    }
+  }
+
+  if (!encryptedAppSecret) {
+    throw new Error(
+      data.metaEncryptedAppSecret
+        ? 'Không đọc được App Secret cũ. Hãy nhập lại App Secret rồi lưu.'
+        : 'Hãy nhập App Secret lần đầu trước khi lưu cấu hình Meta.'
+    );
   }
 
   await writeUserFields(user, {
