@@ -2,6 +2,11 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useAuth } from './AuthContext';
 import { FacebookPage, SystemConfigStatus, MetaConfigSummary } from '../types';
 
+interface FacebookConnectResult {
+  success: boolean;
+  error?: string;
+}
+
 interface FacebookContextType {
   connectedPages: FacebookPage[];
   availablePages: FacebookPage[];
@@ -13,7 +18,7 @@ interface FacebookContextType {
   metaConfig: MetaConfigSummary | null;
   refreshMetaConfig: () => Promise<void>;
   saveMetaConfig: (input: { appId: string; appSecret?: string; graphApiVersion?: string }) => Promise<{ success: boolean; error?: string }>;
-  connectFacebook: () => Promise<void>;
+  connectFacebook: () => Promise<FacebookConnectResult>;
   connectPage: (pageId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   disconnectPage: (pageId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   testPage: (pageId: string) => Promise<{ success: boolean; message?: string; error?: string; canPost?: boolean }>;
@@ -131,57 +136,126 @@ export const FacebookProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     else localStorage.removeItem('pagemanager_selected_page_id');
   };
 
-  const connectFacebook = async () => {
+  /**
+   * Open Meta OAuth and resolve only after the popup has actually completed.
+   *
+   * Previously this function returned immediately after window.open(). The
+   * Messenger reauthorize flow awaited it and then read result.success, so it
+   * crashed with "Cannot read properties of undefined (reading 'success')"
+   * before the OAuth callback could replace the legacy browser-encrypted Page
+   * token. Returning a real result also lets Messenger reload only after the
+   * new token has been stored.
+   */
+  const connectFacebook = async (): Promise<FacebookConnectResult> => {
     try {
       const res = await apiFetch('/api/facebook/auth-url', { method: 'POST' });
       const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'Không thể tạo URL đăng nhập Facebook');
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Không thể tạo URL đăng nhập Facebook');
+      }
 
       const popup = window.open(
         data.url,
         'meta_oauth_dialog',
         'width=650,height=750,menubar=no,toolbar=no,location=no,status=no'
       );
+
       if (!popup) {
-        alert('Trình duyệt đã chặn cửa sổ đăng nhập. Vui lòng cho phép Pop-up để tiếp tục kết nối Facebook.');
-        return;
+        const error = 'Trình duyệt đã chặn cửa sổ đăng nhập. Vui lòng cho phép Pop-up để tiếp tục kết nối Facebook.';
+        alert(error);
+        return { success: false, error };
       }
 
-      let finished = false;
-      const cleanup = () => {
-        if (finished) return;
-        finished = true;
-        window.removeEventListener('message', handleMessage);
-      };
+      return await new Promise<FacebookConnectResult>(resolve => {
+        let settled = false;
+        let closePoll: number | null = null;
+        let timeoutId: number | null = null;
 
-      const handleMessage = async (event: MessageEvent) => {
-        if (event.origin !== window.location.origin) return;
+        const cleanup = () => {
+          window.removeEventListener('message', handleMessage);
+          if (closePoll !== null) window.clearInterval(closePoll);
+          if (timeoutId !== null) window.clearTimeout(timeoutId);
+        };
 
-        if (event.data?.type === 'META_OAUTH_CODE') {
+        const finish = (result: FacebookConnectResult) => {
+          if (settled) return;
+          settled = true;
           cleanup();
           try {
-            const completeRes = await apiFetch('/api/facebook/complete-oauth', {
-              method: 'POST',
-              body: JSON.stringify({ code: event.data.code, state: event.data.state }),
-            });
-            const completeData = await completeRes.json();
-            if (!completeRes.ok) throw new Error(completeData.error || 'Không thể hoàn tất OAuth Meta');
-            await refreshPages();
-            await fetchConfigStatus();
-            await refreshMetaConfig();
-          } catch (err: any) {
-            alert(`Kết nối Meta thất bại: ${err.message || 'Không thể lưu kết nối'}`);
-          }
-        } else if (event.data?.type === 'META_OAUTH_ERROR') {
-          cleanup();
-          alert(`Kết nối Meta thất bại: ${event.data.error || 'Đã hủy quyền'}`);
-        }
-      };
+            if (!popup.closed) popup.close();
+          } catch {}
+          resolve(result);
+        };
 
-      window.addEventListener('message', handleMessage);
+        const handleMessage = async (event: MessageEvent) => {
+          if (event.origin !== window.location.origin) return;
+
+          if (event.data?.type === 'META_OAUTH_CODE') {
+            try {
+              const completeRes = await apiFetch('/api/facebook/complete-oauth', {
+                method: 'POST',
+                body: JSON.stringify({
+                  code: event.data.code,
+                  state: event.data.state,
+                }),
+              });
+              const completeData = await completeRes.json();
+
+              if (!completeRes.ok) {
+                throw new Error(completeData.error || 'Không thể hoàn tất OAuth Meta');
+              }
+
+              // complete-oauth has now replaced the Page/User token in
+              // Firestore. With the server-key encryption fix, the new token
+              // is no longer tied to the AI Studio/browser vault.
+              await refreshPages();
+              await fetchConfigStatus();
+              await refreshMetaConfig();
+
+              finish({ success: true });
+            } catch (err: any) {
+              const error = err?.message || 'Không thể lưu kết nối Meta';
+              console.error('Meta OAuth completion error:', err);
+              alert(`Kết nối Meta thất bại: ${error}`);
+              finish({ success: false, error });
+            }
+            return;
+          }
+
+          if (event.data?.type === 'META_OAUTH_ERROR') {
+            const error = event.data.error || 'Đã hủy quyền Meta';
+            alert(`Kết nối Meta thất bại: ${error}`);
+            finish({ success: false, error });
+          }
+        };
+
+        window.addEventListener('message', handleMessage);
+
+        // Resolve cleanly if the user closes the Meta popup manually.
+        closePoll = window.setInterval(() => {
+          try {
+            if (popup.closed) {
+              finish({
+                success: false,
+                error: 'Cửa sổ kết nối Facebook đã được đóng trước khi hoàn tất.',
+              });
+            }
+          } catch {}
+        }, 500);
+
+        // Never leave Messenger stuck in "Đang kết nối..." forever.
+        timeoutId = window.setTimeout(() => {
+          finish({
+            success: false,
+            error: 'Kết nối Facebook quá thời gian chờ. Vui lòng thử lại.',
+          });
+        }, 5 * 60 * 1000);
+      });
     } catch (err: any) {
+      const error = err?.message || 'Lỗi khi khởi tạo Facebook Login';
       console.error('connectFacebook error:', err);
-      alert(err.message || 'Lỗi khi khởi tạo Facebook Login');
+      alert(error);
+      return { success: false, error };
     }
   };
 
