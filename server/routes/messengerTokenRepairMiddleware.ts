@@ -1,7 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import { authenticateRequest } from '../middleware/authMiddleware.js';
 import { queryDocuments, updateDocument } from '../services/firebaseRest.js';
-import { decryptToken, encryptToken } from '../services/meta/metaTokenService.js';
+import {
+  decryptTokenDetailed,
+  encryptToken,
+  getPrimaryServerTokenKey,
+} from '../services/meta/metaTokenService.js';
 import { getVaultKeyFromRequest } from '../services/meta/metaConfigService.js';
 import { getGraphBaseUrl } from '../services/meta/metaOAuthService.js';
 
@@ -33,17 +37,44 @@ async function tryRepairPageToken(req: Request): Promise<boolean> {
   if (!page) return false;
 
   const vaultKey = getVaultKeyFromRequest(req, false);
+  const currentPageCipher = String(page.data?.encryptedPageAccessToken || '');
 
-  // Nothing to repair if the current Page token already works with either
-  // the stable server key or this browser's legacy vault key.
-  try {
-    const existing = decryptToken(
-      String(page.data?.encryptedPageAccessToken || ''),
-      vaultKey
-    );
-    if (existing) return false;
-  } catch {
-    // Continue with server-side recovery below.
+  /**
+   * First try the Page token itself.
+   *
+   * If it decrypts with META_APP_SECRET or a browser vault, immediately re-key
+   * it to the current TOKEN_ENCRYPTION_KEY. The old middleware returned early
+   * here, leaving the legacy cipher in Firestore forever.
+   */
+  if (currentPageCipher) {
+    try {
+      const pageTokenResult = decryptTokenDetailed(currentPageCipher, vaultKey);
+
+      if (
+        pageTokenResult.plainText &&
+        pageTokenResult.source !== 'primary-server' &&
+        getPrimaryServerTokenKey()
+      ) {
+        await updateDocument(user.idToken, 'facebookPages', page.id, {
+          encryptedPageAccessToken: encryptToken(pageTokenResult.plainText),
+          tokenRepairedAt: new Date().toISOString(),
+          tokenRepairSource: pageTokenResult.source,
+          updatedAt: new Date().toISOString(),
+        });
+
+        console.log('[Messenger token repair] re-keyed existing Page token', {
+          pageId: page.data?.pageId || requestedPageId,
+          source: pageTokenResult.source,
+        });
+
+        return true;
+      }
+
+      // Already readable with the production key; nothing else is required.
+      if (pageTokenResult.plainText) return false;
+    } catch {
+      // Fall through and try to regenerate Page token from User token.
+    }
   }
 
   const connections = await queryDocuments<any>(
@@ -63,17 +94,45 @@ async function tryRepairPageToken(req: Request): Promise<boolean> {
         new Date(a.data?.updatedAt || 0).getTime()
       )[0];
 
-  if (!connection?.data?.encryptedAccessToken) return false;
+  if (!connection?.data?.encryptedAccessToken) {
+    console.warn('[Messenger token repair] no User token connection found');
+    return false;
+  }
 
   let userAccessToken = '';
+
   try {
-    userAccessToken = decryptToken(
+    const userTokenResult = decryptTokenDetailed(
       String(connection.data.encryptedAccessToken),
       vaultKey
     );
-  } catch {
-    // The user token is also legacy-encrypted. A successful reconnect is still
-    // required once before automatic recovery is possible.
+
+    userAccessToken = userTokenResult.plainText;
+
+    // Migrate the User token as well, otherwise the next browser/runtime can
+    // fall back into the exact same problem again.
+    if (
+      userAccessToken &&
+      userTokenResult.source !== 'primary-server' &&
+      getPrimaryServerTokenKey()
+    ) {
+      await updateDocument(user.idToken, 'facebookConnections', connection.id, {
+        encryptedAccessToken: encryptToken(userAccessToken),
+        tokenRepairedAt: new Date().toISOString(),
+        tokenRepairSource: userTokenResult.source,
+        updatedAt: new Date().toISOString(),
+      });
+
+      console.log('[Messenger token repair] re-keyed User token', {
+        connectionId: connection.id,
+        source: userTokenResult.source,
+      });
+    }
+  } catch (error) {
+    // If we reach here, both Page token and User token are genuinely tied to
+    // another browser vault that this origin cannot know. OAuth reconnect is
+    // then the only cryptographically valid recovery path.
+    console.warn('[Messenger token repair] User token unreadable by all known keys', error);
     return false;
   }
 
@@ -102,6 +161,7 @@ async function tryRepairPageToken(req: Request): Promise<boolean> {
   );
 
   const data = await response.json().catch(() => ({}));
+
   if (!response.ok || data?.error || !data?.access_token) {
     console.warn('[Messenger token repair] Meta could not refresh Page token:', {
       pageId: realPageId,
@@ -111,26 +171,29 @@ async function tryRepairPageToken(req: Request): Promise<boolean> {
     return false;
   }
 
-  const encryptedPageAccessToken = encryptToken(
-    String(data.access_token),
-    vaultKey
-  );
+  // New cipher is always written with the current server key.
+  const encryptedPageAccessToken = encryptToken(String(data.access_token));
 
-  // Verify before persisting so we never replace the old value with a broken
-  // cipher text.
-  const verified = decryptToken(encryptedPageAccessToken, vaultKey);
+  // Verify with server keys only before persisting.
+  const verified = decryptTokenDetailed(encryptedPageAccessToken).plainText;
   if (!verified) return false;
 
   await updateDocument(user.idToken, 'facebookPages', page.id, {
     encryptedPageAccessToken,
     pageName: data?.name || page.data?.pageName || 'Facebook Page',
-    pageTasks: Array.isArray(data?.tasks) ? data.tasks : (page.data?.pageTasks || []),
-    pageAvatarUrl: data?.picture?.data?.url || page.data?.pageAvatarUrl || null,
+    pageTasks: Array.isArray(data?.tasks)
+      ? data.tasks
+      : (page.data?.pageTasks || []),
+    pageAvatarUrl:
+      data?.picture?.data?.url ||
+      page.data?.pageAvatarUrl ||
+      null,
     tokenRepairedAt: new Date().toISOString(),
+    tokenRepairSource: 'user-token-refresh',
     updatedAt: new Date().toISOString(),
   });
 
-  console.log('[Messenger token repair] Page token repaired', {
+  console.log('[Messenger token repair] regenerated Page token', {
     pageId: realPageId,
     pageDocumentId: page.id,
   });
@@ -138,19 +201,6 @@ async function tryRepairPageToken(req: Request): Promise<boolean> {
   return true;
 }
 
-/**
- * Production compatibility middleware.
- *
- * Old Page Manager builds encrypted Meta Page tokens with an origin-scoped
- * browser vault key. That means a token created inside AI Studio cannot be
- * decrypted from pagemanager.vercel.app.
- *
- * After OAuth reconnects the Meta account, facebookConnections contains a
- * fresh User token encrypted with the stable server key. This middleware uses
- * that User token to obtain a fresh Page access token from Meta and migrates
- * the Page document automatically. Existing Messenger routes then run
- * unchanged.
- */
 export async function messengerTokenRepairMiddleware(
   req: Request,
   _res: Response,
@@ -159,10 +209,10 @@ export async function messengerTokenRepairMiddleware(
   try {
     await tryRepairPageToken(req);
   } catch (error) {
-    // Never make token migration itself take Messenger down. The existing
-    // Messenger route will return its normal, user-friendly error if the
-    // original token is still unusable.
+    // Migration is best-effort; the existing Messenger handler remains the
+    // final authority and will return its normal structured error.
     console.warn('[Messenger token repair] skipped:', error);
   }
+
   next();
 }
