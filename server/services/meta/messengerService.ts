@@ -114,6 +114,21 @@ async function graphGet(path: string, pageAccessToken: string, graphApiVersion?:
   return parseGraphResponse(response);
 }
 
+async function graphGetAbsolute(url: string, pageAccessToken: string): Promise<any> {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'graph.facebook.com') {
+    throw new MessengerGraphError('Meta trả về URL phân trang không hợp lệ.');
+  }
+
+  const response = await fetch(parsed.toString(), {
+    headers: {
+      Authorization: `Bearer ${pageAccessToken}`,
+      Accept: 'application/json',
+    },
+  });
+  return parseGraphResponse(response);
+}
+
 async function graphPost(path: string, pageAccessToken: string, body: any, graphApiVersion?: string): Promise<any> {
   const response = await fetch(`${getGraphBaseUrl(graphApiVersion)}${path}`, {
     method: 'POST',
@@ -248,8 +263,6 @@ async function getMessengerProfile(
     profileCache.set(cacheKey, { expiresAt: Date.now() + 15 * 60 * 1000, profile });
     return profile;
   } catch {
-    // Some PSIDs cannot be resolved by the full profile endpoint. Try the
-    // picture edge separately before falling back to the generic avatar.
     try {
       const params = new URLSearchParams({ type: 'large', redirect: 'false' });
       const picture = await graphGet(`/${encodeURIComponent(participant.id)}/picture?${params.toString()}`, pageAccessToken, graphApiVersion);
@@ -261,8 +274,6 @@ async function getMessengerProfile(
       }
     } catch {}
 
-    // Keep the conversation usable with the name returned by the Conversations
-    // API instead of failing the whole inbox.
     return participant;
   }
 }
@@ -316,12 +327,41 @@ export async function listMessengerConversations(
   limit = 50,
   graphApiVersion?: string
 ): Promise<MessengerConversationSummary[]> {
-  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 50));
+  // The inbox historically requested limit=50. Meta caps one page around this
+  // size, so when the normal inbox asks for 50 we continue paging to recover
+  // older conversations. Small calls (status=1, automation=25) stay small.
+  const requested = Math.max(1, Math.min(250, Number(limit) || 50));
+  const targetLimit = requested === 50 ? 250 : requested;
+  const pageSize = Math.min(50, targetLimit);
   const fields = `id,link,updated_time,participants,messages.limit(1){${messageFields}}`;
-  const params = new URLSearchParams({ platform: 'MESSENGER', fields, limit: String(safeLimit) });
+  const params = new URLSearchParams({ platform: 'MESSENGER', fields, limit: String(pageSize) });
 
-  const data = await graphGet(`/${encodeURIComponent(pageId)}/conversations?${params.toString()}`, pageAccessToken, graphApiVersion);
-  const conversations = (Array.isArray(data?.data) ? data.data : [])
+  let data = await graphGet(
+    `/${encodeURIComponent(pageId)}/conversations?${params.toString()}`,
+    pageAccessToken,
+    graphApiVersion
+  );
+
+  const rawItems: any[] = [];
+  const seen = new Set<string>();
+
+  while (data) {
+    const pageItems = Array.isArray(data?.data) ? data.data : [];
+    for (const item of pageItems) {
+      const id = String(item?.id || '');
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      rawItems.push(item);
+      if (rawItems.length >= targetLimit) break;
+    }
+
+    if (rawItems.length >= targetLimit) break;
+    const next = String(data?.paging?.next || '').trim();
+    if (!next) break;
+    data = await graphGetAbsolute(next, pageAccessToken);
+  }
+
+  const conversations = rawItems
     .map((item: any) => buildConversationSummary(item, pageId))
     .filter((item: MessengerConversationSummary) => item.id)
     .sort((a: MessengerConversationSummary, b: MessengerConversationSummary) =>
@@ -342,7 +382,25 @@ export async function getMessengerConversation(
   const raw = await graphGet(`/${encodeURIComponent(conversationId)}?${params.toString()}`, pageAccessToken, graphApiVersion);
 
   const participants = getParticipants(raw);
-  const rawMessages = Array.isArray(raw?.messages?.data) ? raw.messages.data : [];
+  const rawMessages: any[] = Array.isArray(raw?.messages?.data) ? [...raw.messages.data] : [];
+  const seenMessageIds = new Set(rawMessages.map((item: any) => String(item?.id || '')).filter(Boolean));
+
+  // Pull older message pages too. This removes the old hard stop at 100
+  // messages while keeping a practical upper bound for one browser request.
+  let nextMessagesUrl = String(raw?.messages?.paging?.next || '').trim();
+  while (nextMessagesUrl && rawMessages.length < 500) {
+    const page = await graphGetAbsolute(nextMessagesUrl, pageAccessToken);
+    const pageItems = Array.isArray(page?.data) ? page.data : [];
+    for (const item of pageItems) {
+      const id = String(item?.id || '');
+      if (id && seenMessageIds.has(id)) continue;
+      if (id) seenMessageIds.add(id);
+      rawMessages.push(item);
+      if (rawMessages.length >= 500) break;
+    }
+    nextMessagesUrl = rawMessages.length >= 500 ? '' : String(page?.paging?.next || '').trim();
+  }
+
   const messages = rawMessages
     .map((item: any) => normalizeMessage(item, pageId))
     .filter((item: MessengerMessage) => item.id)
@@ -472,7 +530,6 @@ export async function sendMessengerAttachmentBuffer(
       headers: {
         Authorization: `Bearer ${pageAccessToken}`,
         Accept: 'application/json',
-        // Do not set Content-Type manually. fetch adds the multipart boundary.
       },
       body: form,
     }

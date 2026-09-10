@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Facebook, Instagram, Inbox, Loader2, RefreshCw, Search, Zap } from 'lucide-react';
+import { AlertCircle, Facebook, Instagram, Inbox, Loader2, RefreshCw, Search, Zap } from 'lucide-react';
 import { useMessenger } from '../messenger/MessengerContext';
 import { useInstagram } from '../instagram/InstagramContext';
 import { getConversationCustomer, getConversationPreview } from '../instagram/utils';
@@ -158,6 +158,11 @@ export const AllMessagesWorkspace: React.FC<AllMessagesWorkspaceProps> = ({ acti
     setShowAutomation(true);
   };
 
+  const showMessengerError =
+    Boolean(messenger.error) &&
+    (activeFilter === 'facebook' || activeFilter === 'all') &&
+    messenger.conversations.length === 0;
+
   const gridClass = selectedItem?.channel === 'facebook'
     ? (messenger.showInfo ? 'lg:grid-cols-[290px_minmax(0,1fr)] xl:grid-cols-[290px_minmax(0,1fr)_300px]' : 'lg:grid-cols-[290px_minmax(0,1fr)]')
     : 'lg:grid-cols-[290px_minmax(0,1fr)] xl:grid-cols-[290px_minmax(0,1fr)_300px]';
@@ -181,7 +186,32 @@ export const AllMessagesWorkspace: React.FC<AllMessagesWorkspaceProps> = ({ acti
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100">
-          {visibleItems.length === 0 ? (
+          {showMessengerError ? (
+            <div className="h-full min-h-[260px] flex items-center justify-center text-center px-5">
+              <div className="max-w-[240px]">
+                <AlertCircle className="w-8 h-8 text-amber-500 mx-auto mb-2" />
+                <div className="text-[10px] font-extrabold text-slate-800">Messenger chưa tải được</div>
+                <p className="mt-1 text-[9px] leading-relaxed text-slate-500">{messenger.error}</p>
+                <div className="mt-3 flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void messenger.handleReauthorize()}
+                    disabled={messenger.reauthorizing}
+                    className="h-8 px-3 rounded-lg bg-blue-600 text-white text-[9px] font-bold hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {messenger.reauthorizing ? 'Đang kết nối...' : 'Kết nối lại Facebook'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void messenger.loadMessenger(false, true)}
+                    className="h-8 px-3 rounded-lg border border-slate-200 text-slate-600 text-[9px] font-bold hover:bg-slate-50"
+                  >
+                    Thử lại
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : visibleItems.length === 0 ? (
             <div className="h-full min-h-[220px] flex items-center justify-center text-center px-5">
               <div><Inbox className="w-8 h-8 text-slate-200 mx-auto mb-2" /><div className="text-[10px] font-bold text-slate-600">Không có hội thoại phù hợp</div></div>
             </div>
