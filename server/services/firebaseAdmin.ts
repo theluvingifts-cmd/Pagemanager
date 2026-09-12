@@ -17,11 +17,11 @@ function runtimeStorageBucket() {
 }
 
 function externalStorageProjectId() {
-  return process.env.STORAGE_FIREBASE_PROJECT_ID || '';
+  return process.env.STORAGE_FIREBASE_PROJECT_ID || 'the-luvin';
 }
 
 function externalStorageBucket() {
-  return process.env.STORAGE_FIREBASE_BUCKET || '';
+  return process.env.STORAGE_FIREBASE_BUCKET || 'the-luvin.firebasestorage.app';
 }
 
 function normalizePrivateKey(value: string) {

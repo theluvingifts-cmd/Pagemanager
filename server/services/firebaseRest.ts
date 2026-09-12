@@ -299,31 +299,19 @@ async function uploadToExternalStorage(
  * that Meta can fetch without Firebase Auth.
  */
 export async function uploadStorageObject(
-  idToken: string,
+  _idToken: string,
   storagePath: string,
   bytes: Buffer,
   contentType: string
 ): Promise<string> {
-  if (isExternalStorageConfigured()) {
-    return uploadToExternalStorage(storagePath, bytes, contentType);
+  // This Page Manager installation intentionally uses Firebase project B
+  // (the-luvin) for ALL media. Never silently fall back to project A, because
+  // that recreates the pagemanager-prod.firebasestorage.app Not Found bug.
+  if (!isExternalStorageConfigured()) {
+    throw new Error(
+      'Storage project B (the-luvin) chưa có Service Account trong runtime. Kiểm tra file .env ở thư mục gốc hoặc STORAGE_FIREBASE_SERVICE_ACCOUNT.'
+    );
   }
 
-  // Backward-compatible fallback for installations that still use the same
-  // Firebase project for Auth/Firestore/Storage.
-  const { storageBucket } = getFirebaseRuntimeConfig();
-  const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(storageBucket)}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-      'Content-Type': contentType || 'application/octet-stream',
-    },
-    body: bytes,
-  });
-
-  if (!response.ok) {
-    throw await parseError(response, `Không thể tải tệp lên Firebase Storage (${storageBucket})`);
-  }
-
-  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(storageBucket)}/o/${encodeURIComponent(storagePath)}?alt=media`;
+  return uploadToExternalStorage(storagePath, bytes, contentType);
 }

@@ -22,20 +22,13 @@ const SAFE_FALLBACK_MODELS = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.
 
 function normalizeGeminiModelName(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-
   let model = value.trim();
   if (!model) return null;
-
-  // Environment editors sometimes preserve quotes or users paste the REST path.
-  // Normalize all of those back to the model ID expected by @google/genai.
   model = model.replace(/^['"]|['"]$/g, '').trim();
   model = model.replace(/^https?:\/\/[^/]+\/v\d+(?:beta)?\/models\//i, '');
   model = model.replace(/^models\//i, '');
   model = model.replace(/:generateContent(?:\?.*)?$/i, '');
   model = model.trim();
-
-  // Never forward arbitrary/malformed environment text to GenerateContentRequest.model.
-  // Gemini public model IDs are simple lowercase resource IDs such as gemini-3.8-flash.
   if (!/^gemini-[a-z0-9][a-z0-9._-]*$/i.test(model)) return null;
   return model.toLowerCase();
 }
@@ -50,35 +43,21 @@ function getCandidateModels(): string[] {
     .split(',')
     .map(normalizeGeminiModelName)
     .filter((value): value is string => Boolean(value));
-
-  // Always keep known-good stable IDs in the list. A bad GEMINI_MODEL value is
-  // ignored instead of being sent to the API and causing "unexpected model name format".
-  return Array.from(
-    new Set([
-      configured || DEFAULT_GEMINI_MODEL,
-      ...envFallbacks,
-      DEFAULT_GEMINI_MODEL,
-      ...SAFE_FALLBACK_MODELS,
-    ])
-  );
+  return Array.from(new Set([
+    configured || DEFAULT_GEMINI_MODEL,
+    ...envFallbacks,
+    DEFAULT_GEMINI_MODEL,
+    ...SAFE_FALLBACK_MODELS,
+  ]));
 }
 
 function cleanJsonSchema(value: any): any {
   if (Array.isArray(value)) return value.map(cleanJsonSchema);
   if (!value || typeof value !== 'object') return value;
-
   const blocked = new Set([
-    'additionalProperties',
-    '$schema',
-    '$id',
-    '$defs',
-    'definitions',
-    'minItems',
-    'maxItems',
-    'minimum',
-    'maximum',
+    'additionalProperties', '$schema', '$id', '$defs', 'definitions',
+    'minItems', 'maxItems', 'minimum', 'maximum',
   ]);
-
   const out: Record<string, any> = {};
   for (const [key, item] of Object.entries(value)) {
     if (blocked.has(key)) continue;
@@ -89,42 +68,25 @@ function cleanJsonSchema(value: any): any {
 
 function parsePossibleJson(value: unknown): any {
   if (typeof value !== 'string') return null;
-  const text = value.trim();
-  if (!text.startsWith('{') && !text.startsWith('[')) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
+  let text = value.trim();
+  if (text.startsWith('```')) {
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   }
+  if (!text.startsWith('{') && !text.startsWith('[')) return null;
+  try { return JSON.parse(text); } catch { return null; }
 }
 
 function getErrorDetails(err: any): { status: number | null; message: string } {
   const parsedMessage = parsePossibleJson(err?.message);
-  const nestedError =
-    err?.error ||
-    err?.response?.data?.error ||
-    parsedMessage?.error ||
-    parsedMessage ||
-    null;
-
-  const statusCandidate =
-    nestedError?.code ??
-    nestedError?.statusCode ??
-    err?.status ??
-    err?.statusCode ??
-    err?.response?.status ??
-    null;
+  const nestedError = err?.error || err?.response?.data?.error || parsedMessage?.error || parsedMessage || null;
+  const statusCandidate = nestedError?.code ?? nestedError?.statusCode ?? err?.status ?? err?.statusCode ?? err?.response?.status ?? null;
   const statusNumber = Number(statusCandidate);
   const status = Number.isFinite(statusNumber) ? statusNumber : null;
-
   const message = String(
-    nestedError?.message ||
-      err?.response?.data?.message ||
-      (typeof err?.message === 'string' ? err.message : '') ||
-      err ||
-      'Gemini API gặp lỗi không xác định.'
+    nestedError?.message || err?.response?.data?.message ||
+    (typeof err?.message === 'string' ? err.message : '') || err ||
+    'Gemini API gặp lỗi không xác định.'
   ).trim();
-
   return { status, message };
 }
 
@@ -146,7 +108,6 @@ function isModelFormatError(err: any): boolean {
 
 function friendlyError(err: any, triedModels: string[]): string {
   const { status, message } = getErrorDetails(err);
-
   if (status === 503 || /UNAVAILABLE|high demand|overload|capacity/i.test(message)) {
     return `Gemini đang quá tải tạm thời. Page Manager đã tự thử lại và chuyển qua model dự phòng (${triedModels.join(' → ')}) nhưng Google vẫn chưa cấp được tài nguyên. Hãy bấm thử lại sau 10–30 giây.`;
   }
@@ -162,14 +123,10 @@ function friendlyError(err: any, triedModels: string[]): string {
   if (/GenerateContentRequest\.model|unexpected model name format|invalid model name/i.test(message)) {
     return 'Tên model Gemini trong Environment không hợp lệ. Page Manager đã bỏ qua cấu hình sai và thử các model mặc định nhưng vẫn không gọi được API.';
   }
-
   return message || 'Gemini API gặp lỗi không xác định.';
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
+function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
 async function waitWithBackoff(attempt: number) {
   const base = 900 * Math.pow(2, attempt);
   const jitter = Math.floor(Math.random() * 350);
@@ -183,9 +140,7 @@ export async function createGeminiResponse(
 ): Promise<string> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    throw new Error(
-      'GEMINI_API_KEY chưa có trong server environment. Với Google AI Studio Build, key này thường được tạo tự động trong Settings → Secrets.'
-    );
+    throw new Error('GEMINI_API_KEY chưa có trong server environment. Với Google AI Studio Build, key này thường được tạo tự động trong Settings → Secrets.');
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -194,7 +149,6 @@ export async function createGeminiResponse(
     maxOutputTokens: options.maxOutputTokens || 1800,
     temperature: options.jsonSchema ? 0.25 : 0.45,
   };
-
   if (options.jsonSchema) {
     config.responseMimeType = 'application/json';
     config.responseSchema = cleanJsonSchema(options.jsonSchema.schema);
@@ -207,46 +161,63 @@ export async function createGeminiResponse(
   for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
     const model = models[modelIndex];
     triedModels.push(model);
-
-    // Two attempts per model. 503/5xx gets exponential backoff, then we move
-    // to the next stable Flash model. Non-transient config/auth errors fail fast.
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: input,
-          config,
-        });
-
+        const response = await ai.models.generateContent({ model, contents: input, config });
         const text = typeof response.text === 'string' ? response.text.trim() : '';
         if (!text) throw new Error('Gemini không trả về nội dung văn bản.');
         return text;
       } catch (err: any) {
         lastError = err;
-
-        // If one candidate somehow has a malformed model ID, skip it and try the
-        // next known-good model instead of failing the whole Shop Manager.
-        if (isModelFormatError(err)) {
-          break;
-        }
-
-        if (!isTransientError(err)) {
-          throw new Error(friendlyError(err, triedModels));
-        }
-
-        if (attempt === 0) {
-          await waitWithBackoff(attempt);
-          continue;
-        }
-
-        // For a capacity spike, changing model gives us another capacity pool.
-        // For other transient errors we still allow the same fallback behavior.
+        if (isModelFormatError(err)) break;
+        if (!isTransientError(err)) throw new Error(friendlyError(err, triedModels));
+        if (attempt === 0) { await waitWithBackoff(attempt); continue; }
         if (modelIndex < models.length - 1) {
           await sleep(isCapacityError(err) ? 300 + Math.floor(Math.random() * 250) : 700);
         }
       }
     }
   }
-
   throw new Error(friendlyError(lastError, triedModels));
+}
+
+/**
+ * Structured-output wrapper used anywhere Page Manager expects JSON.
+ * Gemini can occasionally return truncated JSON even with responseSchema.
+ * We validate here, then ask for a clean regeneration once instead of leaking
+ * JSON.parse errors such as "Unterminated string" into the UI.
+ */
+export async function createGeminiJsonResponse<T = any>(
+  instructions: string,
+  input: string,
+  options: GeminiRequestOptions & { repairAttempts?: number } = {}
+): Promise<T> {
+  const repairAttempts = Math.max(0, Math.min(2, Number(options.repairAttempts ?? 1)));
+  let lastRaw = '';
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt <= repairAttempts; attempt += 1) {
+    const repairNote = attempt === 0
+      ? ''
+      : '\n\nQUAN TRỌNG: Lần trả lời trước bị JSON lỗi/cắt cụt. Hãy tạo lại TOÀN BỘ JSON từ đầu, không dùng markdown, không giải thích ngoài JSON, đóng đủ mọi dấu ngoặc và dấu nháy.';
+    try {
+      lastRaw = await createGeminiResponse(
+        `${instructions}${repairNote}`,
+        input,
+        {
+          ...options,
+          maxOutputTokens: Math.max(options.maxOutputTokens || 1800, attempt > 0 ? 2600 : 0),
+        }
+      );
+      const parsed = parsePossibleJson(lastRaw);
+      if (parsed !== null) return parsed as T;
+      lastError = new Error('Gemini trả về JSON không hợp lệ hoặc bị cắt cụt.');
+    } catch (err) {
+      lastError = err;
+      if (attempt >= repairAttempts) throw err;
+    }
+  }
+
+  const preview = lastRaw.slice(0, 180).replace(/\s+/g, ' ');
+  throw new Error(`${lastError?.message || 'Gemini trả về JSON không hợp lệ.'}${preview ? ` Nội dung đầu: ${preview}` : ''}`);
 }

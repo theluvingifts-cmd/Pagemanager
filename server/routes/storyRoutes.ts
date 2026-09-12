@@ -6,7 +6,7 @@ import { getVaultKeyFromRequest } from '../services/meta/metaConfigService.js';
 import { getLinkedInstagramAccount } from '../services/meta/instagramService.js';
 import { publishFacebookStory, publishInstagramStory } from '../services/meta/metaStoryService.js';
 import { MetaApiError } from '../services/meta/metaError.js';
-import { createGeminiResponse, isGeminiConfigured } from '../services/ai/geminiService.js';
+import { createGeminiJsonResponse, isGeminiConfigured } from '../services/ai/geminiService.js';
 
 export const storyRouter = Router();
 const allowedPlatforms = new Set(['facebook', 'instagram']);
@@ -121,11 +121,11 @@ storyRouter.post('/recommendations', async (req, res) => {
       },
       required: ['summary', 'recommendations'],
     };
-    const raw = await createGeminiResponse(
+    const plan = await createGeminiJsonResponse<any>(
       'Bạn là content strategist thực chiến cho The Luvin, thương hiệu quà tặng cá nhân hóa tại Việt Nam. Tự xác định hôm nay đang thiếu nhóm nào trong: Feedback, Bán hàng, Hậu trường, Tương tác, Giá trị, Thương hiệu. summary phải mở đầu bằng "Nên ưu tiên: [nhóm]" và giải thích trong một câu dựa trên lịch sử thật. Không bịa hiệu quả. Mỗi đề xuất phải có objective là đúng một trong sáu nhóm trên. Ý tưởng phải dễ quay/chụp và bán hàng tự nhiên. Viết tiếng Việt cực ngắn.',
       `Thời điểm hiện tại: ${new Date().toISOString()}\n30 bài gần nhất:\n${JSON.stringify(recent)}\n30 Story gần nhất:\n${JSON.stringify(storyRecords.map(x => x.data).sort((a,b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).slice(0,30).map(x => ({ title: x.title, status: x.status, platforms: x.platforms, createdAt: x.createdAt, publishedAt: x.publishedAt })))} `,
-      { maxOutputTokens: 1800, jsonSchema: { name: 'story_plan', schema } }
+      { maxOutputTokens: 2200, repairAttempts: 1, jsonSchema: { name: 'story_plan', schema } }
     );
-    res.json({ success: true, plan: JSON.parse(raw), basedOn: recent.length });
+    res.json({ success: true, plan, basedOn: recent.length });
   } catch (err: any) { res.status(500).json({ error: err.message || 'AI chưa phân tích được Story' }); }
 });

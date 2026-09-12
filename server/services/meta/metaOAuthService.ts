@@ -29,8 +29,10 @@ export function getOAuthUrl(
     'pages_manage_posts',
     'pages_manage_metadata',
     'pages_messaging',
+    'read_insights',
     'instagram_basic',
     'instagram_content_publish',
+    'instagram_manage_insights',
     'instagram_manage_comments',
     'instagram_manage_messages',
   ].join(',');
@@ -66,9 +68,7 @@ export async function exchangeCodeForUserToken(
   appSecret: string,
   graphApiVersion?: string
 ): Promise<MetaTokenExchangeResult> {
-  if (!appId || !appSecret) {
-    throw new Error('Meta App ID hoặc App Secret chưa được cấu hình.');
-  }
+  if (!appId || !appSecret) throw new Error('Meta App ID hoặc App Secret chưa được cấu hình.');
 
   const shortData = await postTokenRequest(new URLSearchParams({
     client_id: appId,
@@ -82,7 +82,6 @@ export async function exchangeCodeForUserToken(
 
   let finalAccessToken = shortLivedToken;
   let expiresIn = shortData.expires_in;
-
   try {
     const longData = await postTokenRequest(new URLSearchParams({
       grant_type: 'fb_exchange_token',
