@@ -6,6 +6,7 @@ import { getVaultKeyFromRequest } from '../services/meta/metaConfigService.js';
 import { encryptBackgroundPageToken, getBackgroundEncryptionKey } from '../services/automation/backgroundTokenService.js';
 import { getAdminDb } from '../services/firebaseAdmin.js';
 import { runAllBackgroundMessengerAutomations, runBackgroundMessengerAutomationForPage } from '../services/automation/messengerAutomationWorker.js';
+import { runScheduledStoryAutomation } from '../services/automation/storyAutomationWorker.js';
 
 export const backgroundAutomationRouter = Router();
 
@@ -181,6 +182,7 @@ backgroundAutomationRouter.post('/cron', async (req: Request, res: Response) => 
   if (!isAuthorizedCron(req)) return res.status(401).json({ success: false, error: 'Cron secret không hợp lệ.' });
   try {
     const results = await runAllBackgroundMessengerAutomations({ dryRun: Boolean(req.body?.dryRun), limit: Number(req.body?.limit) || 20 });
+    const storyResults = req.body?.dryRun ? [] : await runScheduledStoryAutomation(Number(req.body?.limit) || 20);
     return res.json({
       success: true,
       pages: results.length,
@@ -189,6 +191,12 @@ backgroundAutomationRouter.post('/cron', async (req: Request, res: Response) => 
       reminders: results.reduce((sum, item) => sum + (item.result.reminders || 0), 0),
       failed: results.filter(item => !item.result.success).length,
       results,
+      stories: {
+        processed: storyResults.length,
+        published: storyResults.filter(item => item.success).length,
+        failed: storyResults.filter(item => !item.success).length,
+        results: storyResults,
+      },
       ranAt: new Date().toISOString(),
     });
   } catch (err: any) {
@@ -203,7 +211,7 @@ export function startBackgroundAutomationLoop() {
   loopStarted = true;
   const intervalMs = Math.max(60_000, Number(process.env.AUTOMATION_INTERNAL_LOOP_MS) || 120_000);
   const tick = async () => {
-    try { await runAllBackgroundMessengerAutomations({ limit: 20 }); } catch (err) { console.error('[Background Automation Loop]', err); }
+    try { await Promise.all([runAllBackgroundMessengerAutomations({ limit: 20 }), runScheduledStoryAutomation(20)]); } catch (err) { console.error('[Background Automation Loop]', err); }
   };
   setTimeout(tick, 15_000);
   setInterval(tick, intervalMs).unref?.();

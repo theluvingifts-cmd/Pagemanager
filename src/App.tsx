@@ -34,6 +34,7 @@ export default function App() {
                   <Route index element={<Navigate to="/dashboard" replace />} />
                   <Route path="dashboard" element={<DashboardPage />} />
                   <Route path="content" element={<ContentHubPage />} />
+                  <Route path="stories" element={<Navigate to="/content?channel=stories" replace />} />
                   <Route path="content/new" element={<ContentEditorPage />} />
                   <Route path="content/:id" element={<ContentDetailPage />} />
                   <Route path="content/edit/:id" element={<ContentEditorPage />} />

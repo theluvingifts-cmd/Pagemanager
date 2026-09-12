@@ -9,6 +9,7 @@ import { messengerRouter } from './server/routes/messengerRoutes.js';
 import { messengerTokenRepairMiddleware } from './server/routes/messengerTokenRepairMiddleware.js';
 import { instagramRouter } from './server/routes/instagramRoutes.js';
 import { metaWebhookRouter } from './server/routes/metaWebhookRoutes.js';
+import { storyRouter } from './server/routes/storyRoutes.js';
 import {
   backgroundAutomationRouter,
   startBackgroundAutomationLoop,
@@ -75,6 +76,7 @@ app.get('/api/config-status', (req, res) => {
 
 app.use('/api/facebook', facebookRouter);
 app.use('/api/contents', contentRouter);
+app.use('/api/stories', storyRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/ai', aiRouter);
 

@@ -1,8 +1,8 @@
 import React from 'react';
-import { Facebook, Instagram, Inbox } from 'lucide-react';
+import { Facebook, Instagram, Inbox, CirclePlay } from 'lucide-react';
 import { useInstagram } from '../../features/instagram/InstagramContext';
 
-export type MetaChannel = 'all' | 'facebook' | 'instagram';
+export type MetaChannel = 'all' | 'facebook' | 'instagram' | 'stories';
 
 interface MetaChannelTabsProps {
   active: MetaChannel;
@@ -11,6 +11,7 @@ interface MetaChannelTabsProps {
   instagramLabel?: string;
   showAll?: boolean;
   allLabel?: string;
+  showStories?: boolean;
   badges?: Partial<Record<MetaChannel, number>>;
 }
 
@@ -30,6 +31,7 @@ export const MetaChannelTabs: React.FC<MetaChannelTabsProps> = ({
   instagramLabel = 'Instagram',
   showAll = false,
   allLabel = 'Tất cả tin nhắn',
+  showStories = false,
   badges = {},
 }) => {
   const { linked, account } = useInstagram();
@@ -60,6 +62,14 @@ export const MetaChannelTabs: React.FC<MetaChannelTabsProps> = ({
         <CountBadge value={badges.instagram} />
         {linked && account ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title={`Đã liên kết @${account.username || 'instagram'}`} /> : null}
       </button>
+
+      {showStories && (
+        <button type="button" onClick={() => onChange('stories')} className={`${base} ${active === 'stories' ? activeClass : inactive}`}>
+          <CirclePlay className="w-3.5 h-3.5" />
+          <span>Tin</span>
+          <CountBadge value={badges.stories} />
+        </button>
+      )}
     </div>
   );
 };
