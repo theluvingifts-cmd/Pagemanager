@@ -1,4 +1,9 @@
 import crypto from 'crypto';
+import {
+  getExternalAdminStorage,
+  getExternalStorageBucketName,
+  isExternalStorageConfigured,
+} from './firebaseAdmin.js';
 
 export interface FirebaseRuntimeConfig {
   apiKey: string;
@@ -258,12 +263,53 @@ export async function deleteDocument(
   }
 }
 
+function firebaseDownloadUrl(bucket: string, storagePath: string, token: string) {
+  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(storagePath)}?alt=media&token=${encodeURIComponent(token)}`;
+}
+
+async function uploadToExternalStorage(
+  storagePath: string,
+  bytes: Buffer,
+  contentType: string
+): Promise<string> {
+  const storage = getExternalAdminStorage();
+  const bucketName = getExternalStorageBucketName();
+  const downloadToken = crypto.randomUUID();
+  const object = storage.bucket(bucketName).file(storagePath);
+
+  await object.save(bytes, {
+    resumable: false,
+    validation: 'crc32c',
+    metadata: {
+      contentType: contentType || 'application/octet-stream',
+      cacheControl: 'public,max-age=3600',
+      metadata: {
+        firebaseStorageDownloadTokens: downloadToken,
+      },
+    },
+  });
+
+  return firebaseDownloadUrl(bucketName, storagePath, downloadToken);
+}
+
+/**
+ * Upload media. If project-B Storage is configured, the user's project-A ID token
+ * is intentionally NOT used for Storage authorization. The server-side service
+ * account of project B performs the upload and returns a tokenized public URL
+ * that Meta can fetch without Firebase Auth.
+ */
 export async function uploadStorageObject(
   idToken: string,
   storagePath: string,
   bytes: Buffer,
   contentType: string
 ): Promise<string> {
+  if (isExternalStorageConfigured()) {
+    return uploadToExternalStorage(storagePath, bytes, contentType);
+  }
+
+  // Backward-compatible fallback for installations that still use the same
+  // Firebase project for Auth/Firestore/Storage.
   const { storageBucket } = getFirebaseRuntimeConfig();
   const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(storageBucket)}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`;
   const response = await fetch(url, {

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
+import sharp from 'sharp';
 import {
   createDocument,
   isFirebaseRestConfigured,
@@ -12,19 +12,50 @@ import { authenticateRequest } from '../middleware/authMiddleware.js';
 
 export const mediaRouter = Router();
 
-const isVercel = Boolean(process.env.VERCEL);
-const uploadDir = isVercel ? '' : path.join(process.cwd(), 'uploads');
-
-// /var/task is read-only on Vercel. Local fallback storage is dev-only,
-// so never create the uploads directory while booting a Vercel Function.
-if (!isVercel && !fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 30 * 1024 * 1024 },
 });
+
+async function assertRemoteMedia(url: string, mediaType: 'image' | 'video') {
+  let response = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+
+  // Some storage/CDN endpoints do not implement HEAD correctly. Fall back to a
+  // tiny range request so we can still validate status and Content-Type.
+  if (!response.ok) {
+    response = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { Range: 'bytes=0-0' },
+    });
+  }
+
+  if (!response.ok && response.status !== 206) {
+    throw new Error(`URL media vừa tải lên không truy cập công khai được (HTTP ${response.status}).`);
+  }
+
+  const contentType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+  if (mediaType === 'image' && !contentType.startsWith('image/')) {
+    throw new Error(`URL ảnh trả về sai định dạng (${contentType || 'không có Content-Type'}).`);
+  }
+  if (mediaType === 'video' && !contentType.startsWith('video/')) {
+    throw new Error(`URL video trả về sai định dạng (${contentType || 'không có Content-Type'}).`);
+  }
+
+  try { await response.body?.cancel(); } catch {}
+}
+
+async function normalizeImage(buffer: Buffer) {
+  try {
+    return await sharp(buffer, { failOn: 'none' })
+      .rotate()
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: 92, mozjpeg: true })
+      .toBuffer();
+  } catch {
+    throw new Error('Ảnh không hợp lệ hoặc không thể chuyển sang JPEG chuẩn cho Meta.');
+  }
+}
 
 mediaRouter.get('/', async (req: Request, res: Response) => {
   try {
@@ -68,34 +99,32 @@ mediaRouter.post('/upload', upload.single('file'), async (req: Request, res: Res
       return res.status(400).json({ error: 'Chỉ hỗ trợ hình ảnh hoặc video.' });
     }
 
-    const ext = path.extname(file.originalname).toLowerCase();
+    const mediaType: 'image' | 'video' = isImage ? 'image' : 'video';
+    let uploadBytes = file.buffer;
+    let uploadMime = file.mimetype;
+    let ext = path.extname(file.originalname).toLowerCase() || '.bin';
+
+    // Meta/Instagram is much more reliable with a real JPEG than with HEIC,
+    // WebP, PNG with alpha, or files whose extension/MIME do not match.
+    if (isImage) {
+      uploadBytes = await normalizeImage(file.buffer);
+      uploadMime = 'image/jpeg';
+      ext = '.jpg';
+    }
+
     const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
     const storagePath = `users/${user.id}/${fileName}`;
-    const mediaType = isImage ? 'image' : 'video';
 
-    let downloadUrl = '';
-    try {
-      downloadUrl = await uploadStorageObject(
-        user.idToken,
-        storagePath,
-        file.buffer,
-        file.mimetype
-      );
-    } catch (storageErr: any) {
-      // Local fallback is intentionally restricted to development. Production
-      // media must live in Firebase Storage so Meta can fetch it reliably.
-      if (process.env.NODE_ENV === 'production' || isVercel) {
-        throw storageErr;
-      }
+    // No local /uploads fallback. Story media must always live at a URL that
+    // Meta can fetch from the public internet.
+    const downloadUrl = await uploadStorageObject(
+      user.idToken,
+      storagePath,
+      uploadBytes,
+      uploadMime
+    );
 
-      console.warn('Firebase Storage upload failed; using local dev fallback:', storageErr?.message || storageErr);
-      fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
-
-      const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
-      const protocol = forwardedProto || req.protocol;
-      const baseUrl = process.env.APP_URL || `${protocol}://${req.get('host')}`;
-      downloadUrl = `${baseUrl.replace(/\/$/, '')}/uploads/${fileName}`;
-    }
+    await assertRemoteMedia(downloadUrl, mediaType);
 
     const now = new Date().toISOString();
     const record = await createDocument(user.idToken, 'media', {
@@ -105,7 +134,9 @@ mediaRouter.post('/upload', upload.single('file'), async (req: Request, res: Res
       downloadUrl,
       mediaType,
       fileName: file.originalname,
-      fileSize: file.size,
+      fileSize: uploadBytes.length,
+      originalFileSize: file.size,
+      contentType: uploadMime,
       createdAt: now,
     });
 
@@ -116,11 +147,12 @@ mediaRouter.post('/upload', upload.single('file'), async (req: Request, res: Res
         user_id: user.id,
         content_id: req.body.content_id || null,
         file_name: file.originalname,
-        file_size: file.size,
+        file_size: uploadBytes.length,
         media_type: mediaType,
         storage_path: storagePath,
         public_url: downloadUrl,
         downloadUrl,
+        content_type: uploadMime,
         created_at: now,
       },
     });
